@@ -129,7 +129,7 @@ const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
 const SB_KEY = 'sb_publishable_PJfzZshU0tA9FigMiysl1Q_1wMFjKHJ';
 /* Cajas de datos que se comparten entre todos los equipos.
    OJO: 'session' NO se comparte (cada equipo inicia sesión aparte). */
-const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab'];
+const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos'];
 
 /* ====== ALMACENAMIENTO (local + nube) ====== */
 const DB = {
@@ -207,6 +207,8 @@ function seed(){
   if(!DB.get('metodosPago')) DB.set('metodosPago', METODOS.slice());
   if(DB.get('pagoControl')===undefined) DB.set('pagoControl', 0);
   if(!DB.get('tiposHab')) DB.set('tiposHab', TIPOS.slice());
+  if(!DB.get('preciosTipo')) DB.set('preciosTipo', {});
+  if(!DB.get('permisos')) DB.set('permisos', {});
 }
 
 const ROLES = {
@@ -220,6 +222,11 @@ function rolOptions(sel){
   return opts.map(o=>'<option value="'+o[0]+'"'+(o[0]===sel?' selected':'')+'>'+o[1]+'</option>').join('');
 }
 function countMasters(){ return DB.get('users',[]).filter(u=>esMaster(u.rol)).length; }
+/* ---- Permisos del Supervisor de recepción (configurables por el Master) ---- */
+function permisosSupDefault(){ return {anularPagos:false, gestionHab:false, verReportePagos:true}; }
+function permisosSup(){ const p=DB.get('permisos',null); const sp=(p&&p.supervisor)?p.supervisor:{}; return Object.assign(permisosSupDefault(), sp); }
+function setPermisoSup(k,v){ const p=DB.get('permisos',{})||{}; if(!p.supervisor) p.supervisor={}; p.supervisor[k]=!!v; DB.set('permisos', p); }
+function puedeSup(k){ const rol=session().rol; if(esMaster(rol)) return true; if(rol==='supervisor') return !!permisosSup()[k]; return false; }
 
 /* ====== SESIÓN / LOGIN ====== */
 function login(){
@@ -368,9 +375,22 @@ function recepTab(id,label){ return '<div class="tab '+(recepView===id?'active':
 function renderRecepcion(){
   const c = document.getElementById('content');
   let html = '<div class="section-title">Panel de Recepción</div>';
-  html += '<div class="tabs">'+recepTab('mapa','Mapa de habitaciones')+recepTab('caja','Caja / Arqueo')+recepTab('reportes','Reporte de pagos')+recepTab('clientes','Clientes')+recepTab('kardex','Kardex / Turno')+'</div>';
+  const esSup = session().rol==='supervisor';
+  // Pestañas según permisos (el supervisor puede tener permisos recortados o ampliados)
+  const verReporte = esSup ? permisosSup().verReportePagos : true;
+  const verGestionHab = esSup ? permisosSup().gestionHab : false;
+  if(esSup){ // evitar quedar en una pestaña sin permiso
+    if(recepView==='reportes' && !verReporte) recepView='mapa';
+    if(recepView==='habitaciones' && !verGestionHab) recepView='mapa';
+  }
+  let tabs = recepTab('mapa','Mapa de habitaciones')+recepTab('caja','Caja / Arqueo');
+  if(verReporte) tabs += recepTab('reportes','Reporte de pagos');
+  tabs += recepTab('clientes','Clientes')+recepTab('kardex','Kardex / Turno');
+  if(verGestionHab) tabs += recepTab('habitaciones','Habitaciones');
+  html += '<div class="tabs">'+tabs+'</div>';
   if(recepView==='caja'){ c.innerHTML = html + renderCaja(); return; }
   if(recepView==='reportes'){ c.innerHTML = html + renderReportePagos(); return; }
+  if(recepView==='habitaciones'){ c.innerHTML = html + renderGestionHab() + renderOcupacionTipo(); return; }
   if(recepView==='clientes'){ c.innerHTML = html + renderClientes(); return; }
   if(recepView==='kardex'){ c.innerHTML = html + renderKardex(); return; }
   html += statsBar();
@@ -955,6 +975,7 @@ function renderAdmin(){
       html += '</div></div>';
     }
     if(habFiltroTipo && rooms().filter(r=>r.tipo===habFiltroTipo).length===0){ html += '<div class="empty">No hay habitaciones del tipo "'+esc(habFiltroTipo)+'".</div>'; }
+    html += renderOcupacionTipo();
   } else if(adminTab==='usuarios'){
     html += renderUsuarios();
   } else if(adminTab==='habitaciones'){
@@ -997,7 +1018,25 @@ function renderUsuarios(){
   html += '<div class="field"><label>Contraseña</label><input id="u-pass"></div>';
   html += '<div class="field"><label>Rol</label><select id="u-rol">'+rolOptions('recepcion')+'</select></div>';
   html += '<button class="btn-primary" style="margin-top:10px" onclick="addUser()">Crear usuario</button></div>';
+  html += renderPermisosSupervisor();
   return html;
+}
+function renderPermisosSupervisor(){
+  const p=permisosSup();
+  const nSup=DB.get('users',[]).filter(u=>u.rol==='supervisor').length;
+  let h='<div class="divider"></div><div class="section-title" style="font-size:15px">Permisos del Supervisor de recepción</div>';
+  h+='<div style="background:#fff;padding:18px;border-radius:12px;max-width:520px;box-shadow:0 2px 8px rgba(0,0,0,.05)">';
+  h+='<p style="font-size:12px;color:#8893a5;margin-top:0">El Supervisor ve lo mismo que un Recepcionista. Aquí decides qué cosas <b>extra</b> puede hacer. Afecta a todos los usuarios con rol “Supervisor de recepción”'+(nSup?(' (ahora hay '+nSup+')'):' (ahora no hay ninguno)')+'.</p>';
+  h+=permisoRow('anularPagos','Anular cobros en caja','Permite borrar/anular un cobro ya registrado en Caja.', p.anularPagos);
+  h+=permisoRow('verReportePagos','Ver el reporte de pagos por fechas','Muestra la pestaña “Reporte de pagos” con los totales por rango.', p.verReportePagos);
+  h+=permisoRow('gestionHab','Gestionar habitaciones, tipos y precios','Le da la pestaña “Habitaciones” para crear/editar habitaciones, tipos y precios base.', p.gestionHab);
+  h+='</div>';
+  return h;
+}
+function permisoRow(k,titulo,desc,on){
+  return '<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid #eef1f6;cursor:pointer">'+
+    '<input type="checkbox" '+(on?'checked':'')+' onchange="setPermisoSup(\''+k+'\',this.checked);render()" style="width:auto;margin-top:3px">'+
+    '<span><b style="font-size:14px">'+titulo+'</b><div style="font-size:12px;color:#8893a5">'+desc+'</div></span></label>';
 }
 function addUser(){
   const u=document.getElementById('u-user').value.trim().toLowerCase();
@@ -1049,23 +1088,88 @@ function resetData(){
 /* ====== GESTIÓN DE HABITACIONES (admin) ====== */
 function getTipos(){ const t=DB.get('tiposHab', null); return (Array.isArray(t)&&t.length)?t.slice():TIPOS.slice(); }
 function saveTipos(a){ DB.set('tiposHab', a); }
+function getPreciosTipo(){ const p=DB.get('preciosTipo', null); return (p&&typeof p==='object')?p:{}; }
+function precioBaseTipo(t){ const p=getPreciosTipo(); return Number(p[t]||0); }
+function setPrecioBaseTipo(t,v){ const p=getPreciosTipo(); p[t]=Number(v)||0; DB.set('preciosTipo', p); }
+function autoPrecioTipo(selId, tarifaId){
+  const sel=document.getElementById(selId); const inp=document.getElementById(tarifaId);
+  if(!sel||!inp) return; inp.value = precioBaseTipo(sel.value);
+}
 function tipoOptions(sel){ const ts=getTipos(); let h=ts.map(t=>'<option'+(t===sel?' selected':'')+'>'+esc(t)+'</option>').join(''); if(sel && ts.indexOf(sel)<0) h='<option selected>'+esc(sel)+'</option>'+h; return h; }
 
+/* ====== OCUPACIÓN POR TIPO DE HABITACIÓN ====== */
+function datosOcupacionTipo(){
+  const rs=rooms(); const filas=[];
+  const tipos=getTipos().slice();
+  // incluir tipos presentes en habitaciones aunque no estén en la lista
+  rs.forEach(r=>{ const t=r.tipo||'(sin tipo)'; if(tipos.indexOf(t)<0) tipos.push(t); });
+  let tot={total:0,ocupadas:0,libres:0,otras:0};
+  tipos.forEach(t=>{
+    const grupo=rs.filter(r=>(r.tipo||'(sin tipo)')===t);
+    if(grupo.length===0 && getTipos().indexOf(t)<0) return;
+    const total=grupo.length;
+    const ocupadas=grupo.filter(r=>r.estado==='ocupada').length;
+    const libres=grupo.filter(r=>r.estado==='libre').length;
+    const otras=total-ocupadas-libres;
+    const pct= total? Math.round(ocupadas/total*100) : 0;
+    filas.push({tipo:t, total:total, ocupadas:ocupadas, libres:libres, otras:otras, pct:pct, precio:precioBaseTipo(t)});
+    tot.total+=total; tot.ocupadas+=ocupadas; tot.libres+=libres; tot.otras+=otras;
+  });
+  tot.pct= tot.total? Math.round(tot.ocupadas/tot.total*100) : 0;
+  return {filas:filas, tot:tot};
+}
+function renderOcupacionTipo(){
+  const D=datosOcupacionTipo();
+  let h='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:26px">';
+  h+='<div class="section-title" style="font-size:15px;margin:0">Ocupación por tipo de habitación</div>';
+  h+='<button class="btn-gray" style="padding:6px 12px" onclick="imprimirOcupacionTipo()">Imprimir / PDF</button></div>';
+  h+='<table class="users-table" style="margin-top:10px"><tr><th>Tipo</th><th>Precio base</th><th>Total</th><th>Ocupadas</th><th>Libres</th><th>No disponibles</th><th>% Ocupación</th></tr>';
+  D.filas.forEach(f=>{
+    h+='<tr><td><b>'+esc(f.tipo)+'</b></td><td style="font-size:13px">'+(f.precio>0?precioLinea(f.precio):'—')+'</td><td>'+f.total+'</td><td style="color:var(--rojo);font-weight:700">'+f.ocupadas+'</td><td style="color:var(--verde);font-weight:700">'+f.libres+'</td><td>'+f.otras+'</td><td><b>'+f.pct+'%</b></td></tr>';
+  });
+  h+='<tr style="font-weight:800;background:#f3f6fb"><td>TOTAL</td><td>—</td><td>'+D.tot.total+'</td><td>'+D.tot.ocupadas+'</td><td>'+D.tot.libres+'</td><td>'+D.tot.otras+'</td><td>'+D.tot.pct+'%</td></tr></table>';
+  h+='<p style="font-size:12px;color:#8893a5">"No disponibles" incluye habitaciones por limpiar, en limpieza o en mantenimiento.</p>';
+  return h;
+}
+function imprimirOcupacionTipo(){
+  const D=datosOcupacionTipo();
+  let filas='';
+  D.filas.forEach(f=>{ filas+='<tr><td>'+esc(f.tipo)+'</td><td class="r">'+(f.precio>0?fmtUSD(f.precio):'—')+'</td><td class="c">'+f.total+'</td><td class="c">'+f.ocupadas+'</td><td class="c">'+f.libres+'</td><td class="c">'+f.otras+'</td><td class="c">'+f.pct+'%</td></tr>'; });
+  if(!filas) filas='<tr><td colspan="7" class="c" style="color:#888;padding:18px">Sin habitaciones registradas</td></tr>';
+  let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Ocupación por tipo</title>';
+  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}';
+  html+='h1{font-size:20px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 18px}';
+  html+='table{width:100%;border-collapse:collapse;margin-bottom:18px;font-size:13px}';
+  html+='th,td{border:1px solid #ccd;padding:7px 9px;text-align:left}th{background:#eef3fa;color:#44526a}';
+  html+='.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}@media print{body{padding:0}}</style></head><body>';
+  html+=(hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>Ocupación por tipo de habitación</h1>'+hotelLinePrint()+'<div class="sub">Generado: '+new Date().toLocaleString('es-VE')+'</div>';
+  html+='<table><tr><th>Tipo</th><th class="r">Precio base</th><th class="c">Total</th><th class="c">Ocupadas</th><th class="c">Libres</th><th class="c">No disponibles</th><th class="c">% Ocupación</th></tr>'+filas;
+  html+='<tr class="tot"><td>TOTAL</td><td class="r">—</td><td class="c">'+D.tot.total+'</td><td class="c">'+D.tot.ocupadas+'</td><td class="c">'+D.tot.libres+'</td><td class="c">'+D.tot.otras+'</td><td class="c">'+D.tot.pct+'%</td></tr></table>';
+  html+='<p style="font-size:12px;color:#667">"No disponibles" incluye habitaciones por limpiar, en limpieza o en mantenimiento.</p>';
+  html+='</body></html>';
+  const w=window.open('','_blank');
+  if(!w){ alert('Permite las ventanas emergentes para poder imprimir.'); return; }
+  w.document.write(html); w.document.close(); w.focus();
+  setTimeout(function(){ w.print(); }, 400);
+}
 function renderGestionHab(){
   let h = '';
   // --- Tipos de habitación (agregar / editar) ---
   h += '<div style="background:#fff;padding:18px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:16px">';
   h += '<div class="section-title" style="font-size:15px;margin-top:0">Tipos de habitación</div>';
-  h += '<p style="font-size:12px;color:#8893a5;margin-top:0">Aquí defines los tipos (ej: Matrimonial, Suite…). Lo que pongas aquí aparece al crear o editar una habitación y en el buscador por tipo.</p>';
+  h += '<p style="font-size:12px;color:#8893a5;margin-top:0">Aquí defines los tipos (ej: Matrimonial, Suite…) y su <b>precio base por noche</b>. El precio base se pone solo al crear o editar una habitación de ese tipo (igual lo puedes cambiar a mano en cada habitación).</p>';
   const tp = getTipos();
+  h += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:11px;color:#8893a5;text-transform:uppercase;letter-spacing:.4px"><span style="flex:1">Tipo</span><span style="width:120px">Precio base USD</span><span style="width:150px"></span></div>';
   tp.forEach((t,i)=>{
     h += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">';
     h += '<input id="tipo-'+i+'" value="'+escA(t)+'" style="flex:1">';
+    h += '<input id="tipo-precio-'+i+'" type="number" min="0" step="0.01" value="'+precioBaseTipo(t)+'" style="width:120px">';
     h += '<button class="btn-ghost" style="padding:6px 10px" onclick="guardarTipo('+i+')">Guardar</button>';
     h += '<button class="btn-red" style="padding:6px 10px" onclick="eliminarTipo('+i+')">Eliminar</button></div>';
   });
   h += '<div style="display:flex;gap:8px;align-items:center;margin-top:12px">';
   h += '<input id="tipo-nuevo" placeholder="ej: Matrimonial, Familiar, Junior Suite" style="flex:1">';
+  h += '<input id="tipo-nuevo-precio" type="number" min="0" step="0.01" placeholder="Precio USD" style="width:120px">';
   h += '<button class="btn-green" style="padding:6px 12px" onclick="agregarTipo()">+ Agregar</button></div>';
   h += '</div>';
 
@@ -1075,8 +1179,8 @@ function renderGestionHab(){
   h += '<div style="display:flex;gap:10px;flex-wrap:wrap">';
   h += '<div style="flex:1;min-width:90px"><label>N° de piso</label><input id="bf-piso" type="number" min="1" value="'+((pisos().slice(-1)[0]||0)+1)+'"></div>';
   h += '<div style="flex:1;min-width:90px"><label>Cant. hab.</label><input id="bf-cant" type="number" min="1" value="10"></div>';
-  h += '<div style="flex:1;min-width:120px"><label>Tipo</label><select id="bf-tipo">'+tipoOptions('Individual')+'</select></div>';
-  h += '<div style="flex:1;min-width:110px"><label>Tarifa (USD)</label><input id="bf-tarifa" type="number" min="0" step="0.01" value="0"></div>';
+  h += '<div style="flex:1;min-width:120px"><label>Tipo</label><select id="bf-tipo" onchange="autoPrecioTipo(\'bf-tipo\',\'bf-tarifa\')">'+tipoOptions('Individual')+'</select></div>';
+  h += '<div style="flex:1;min-width:110px"><label>Tarifa (USD)</label><input id="bf-tarifa" type="number" min="0" step="0.01" value="'+precioBaseTipo('Individual')+'"></div>';
   h += '</div><button class="btn-primary" style="margin-top:12px" onclick="bulkAddFloor()">Crear piso</button>';
   h += '<p style="font-size:12px;color:#8893a5;margin-top:8px">Numera automáticamente (ej. piso 3 → 301, 302, 303…). Luego puedes editar cada una.</p></div>';
 
@@ -1086,25 +1190,89 @@ function renderGestionHab(){
   h += '<div style="display:flex;gap:10px;flex-wrap:wrap">';
   h += '<div style="flex:1;min-width:90px"><label>Número</label><input id="ar-num" type="number"></div>';
   h += '<div style="flex:1;min-width:90px"><label>Piso</label><input id="ar-piso" type="number" min="1" value="1"></div>';
-  h += '<div style="flex:1;min-width:120px"><label>Tipo</label><select id="ar-tipo">'+tipoOptions('Individual')+'</select></div>';
-  h += '<div style="flex:1;min-width:110px"><label>Tarifa (USD)</label><input id="ar-tarifa" type="number" min="0" step="0.01" value="0"></div>';
+  h += '<div style="flex:1;min-width:120px"><label>Tipo</label><select id="ar-tipo" onchange="autoPrecioTipo(\'ar-tipo\',\'ar-tarifa\')">'+tipoOptions('Individual')+'</select></div>';
+  h += '<div style="flex:1;min-width:110px"><label>Tarifa (USD)</label><input id="ar-tarifa" type="number" min="0" step="0.01" value="'+precioBaseTipo('Individual')+'"></div>';
   h += '</div><button class="btn-primary" style="margin-top:12px" onclick="addRoomSingle()">Agregar</button></div>';
 
   // --- Listado editable ---
   h += '<div class="section-title" style="font-size:15px">Habitaciones actuales ('+rooms().length+')</div>';
   if(rooms().length===0){ h += '<div class="empty">No hay habitaciones. Crea un piso arriba para empezar.</div>'; return h; }
+  h += barraSeleccionHab();
   pisos().forEach(p=>{
     const list = rooms().filter(r=>r.piso===p).sort((a,b)=>a.num-b.num);
+    const todas = list.length>0 && list.every(r=>selHabs.has(r.num));
     h += '<h3 style="font-size:14px;color:#55637a;margin:14px 0 8px">Piso '+p+' ('+list.length+')</h3>';
-    h += '<table class="users-table"><tr><th>Hab.</th><th>Tipo</th><th>Tarifa</th><th>Estado</th><th style="text-align:right">Acciones</th></tr>';
+    h += '<table class="users-table"><tr><th style="width:34px"><input type="checkbox" '+(todas?'checked':'')+' onclick="toggleSelPiso('+p+',this.checked)" title="Seleccionar todo el piso"></th><th>Hab.</th><th>Tipo</th><th>Tarifa</th><th>Estado</th><th style="text-align:right">Acciones</th></tr>';
     list.forEach(r=>{
-      h += '<tr><td><b>'+r.num+'</b></td><td>'+(r.tipo||'')+'</td><td style="font-size:13px">'+precioLinea(r.tarifa)+'</td><td>'+ESTADOS[r.estado].t+'</td>'+
+      const chk = selHabs.has(r.num)?'checked':'';
+      h += '<tr'+(selHabs.has(r.num)?' style="background:#eef6ff"':'')+'><td><input type="checkbox" '+chk+' onclick="toggleSelHab('+r.num+',this.checked)"></td><td><b>'+r.num+'</b></td><td>'+esc(r.tipo||'')+'</td><td style="font-size:13px">'+precioLinea(r.tarifa)+'</td><td>'+ESTADOS[r.estado].t+'</td>'+
         '<td style="text-align:right;white-space:nowrap"><button class="btn-ghost" style="padding:6px 12px;margin-right:6px" onclick="editRoomModal('+r.num+')">Editar</button>'+
         '<button class="btn-red" style="padding:6px 12px" onclick="deleteRoom('+r.num+')">Eliminar</button></td></tr>';
     });
     h += '</table>';
   });
   return h;
+}
+let selHabs = new Set();
+function toggleSelHab(num, on){ if(on) selHabs.add(num); else selHabs.delete(num); render(); }
+function toggleSelPiso(piso, on){ rooms().filter(r=>r.piso===piso).forEach(r=>{ if(on) selHabs.add(r.num); else selHabs.delete(r.num); }); render(); }
+function limpiarSelHab(){ selHabs.clear(); render(); }
+function habsSeleccionadas(){ return rooms().filter(r=>selHabs.has(r.num)); }
+function barraSeleccionHab(){
+  const n = habsSeleccionadas().length;
+  let h = '<div style="background:'+(n?'#0d3b66':'#eef1f6')+';color:'+(n?'#fff':'#55637a')+';padding:12px 16px;border-radius:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">';
+  h += '<b style="font-size:14px">'+(n? (n+' habitación(es) seleccionada(s)') : 'Selecciona habitaciones para editarlas en grupo')+'</b>';
+  if(n){
+    h += '<button class="btn-green" style="padding:6px 12px" onclick="bulkPrecioModal()">Cambiar precio</button>';
+    h += '<button class="btn-primary" style="padding:6px 12px" onclick="bulkTipoModal()">Cambiar tipo</button>';
+    h += '<button class="btn-red" style="padding:6px 12px" onclick="bulkEliminarHabs()">Eliminar</button>';
+    h += '<button class="btn-ghost" style="padding:6px 12px" onclick="limpiarSelHab()">Quitar selección</button>';
+  }
+  h += '</div>';
+  return h;
+}
+function bulkPrecioModal(){
+  const n=habsSeleccionadas().length; if(!n){ alert('No hay habitaciones seleccionadas.'); return; }
+  let body = '<button class="close" onclick="cerrarModal()">×</button><h2>Cambiar precio a '+n+' habitación(es)</h2>';
+  body += '<div class="field"><label>Nueva tarifa por noche (USD)</label><input id="bulk-precio" type="number" min="0" step="0.01" value="0"></div>';
+  body += '<p style="font-size:12px;color:#8893a5">Se aplicará la misma tarifa a todas las habitaciones seleccionadas.</p>';
+  body += '<div class="divider"></div><div class="actions"><button class="btn-green" onclick="aplicarBulkPrecio()">Aplicar</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  showModal(body);
+}
+function aplicarBulkPrecio(){
+  const v=parseFloat(document.getElementById('bulk-precio').value);
+  if(isNaN(v)||v<0){ alert('Escribe una tarifa válida.'); return; }
+  const r=rooms(); r.forEach(x=>{ if(selHabs.has(x.num)) x.tarifa=v; }); saveRooms(r);
+  cerrarModal(); render();
+}
+function bulkTipoModal(){
+  const n=habsSeleccionadas().length; if(!n){ alert('No hay habitaciones seleccionadas.'); return; }
+  let body = '<button class="close" onclick="cerrarModal()">×</button><h2>Cambiar tipo a '+n+' habitación(es)</h2>';
+  body += '<div class="field"><label>Nuevo tipo</label><select id="bulk-tipo">'+tipoOptions(getTipos()[0])+'</select></div>';
+  body += '<label style="display:flex;gap:8px;align-items:center;font-size:14px;cursor:pointer;margin-bottom:6px"><input type="checkbox" id="bulk-tipo-precio" checked style="width:auto"> Poner también el precio base de ese tipo</label>';
+  body += '<div class="divider"></div><div class="actions"><button class="btn-green" onclick="aplicarBulkTipo()">Aplicar</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  showModal(body);
+}
+function aplicarBulkTipo(){
+  const t=document.getElementById('bulk-tipo').value;
+  const ponerPrecio=document.getElementById('bulk-tipo-precio').checked;
+  const base=precioBaseTipo(t);
+  const r=rooms(); r.forEach(x=>{ if(selHabs.has(x.num)){ x.tipo=t; if(ponerPrecio) x.tarifa=base; } }); saveRooms(r);
+  cerrarModal(); render();
+}
+function bulkEliminarHabs(){
+  const sel=habsSeleccionadas();
+  const ocupadas=sel.filter(r=>r.estado==='ocupada');
+  const borrables=sel.filter(r=>r.estado!=='ocupada');
+  if(borrables.length===0){ alert('No se puede borrar: todas las seleccionadas están ocupadas. Haz check-out primero.'); return; }
+  let msg='¿Eliminar '+borrables.length+' habitación(es)?';
+  if(ocupadas.length) msg+=' ('+ocupadas.length+' están ocupadas y NO se borrarán).';
+  if(!confirm(msg)) return;
+  const nums=borrables.map(r=>r.num);
+  saveRooms(rooms().filter(x=>nums.indexOf(x.num)<0));
+  const reps=DB.get('reportes',[]).filter(x=>nums.indexOf(x.hab)<0); DB.set('reportes',reps);
+  nums.forEach(num=>selHabs.delete(num));
+  render();
 }
 
 function bulkAddFloor(){
@@ -1141,8 +1309,8 @@ function editRoomModal(num){
   body += '<h2>Editar habitación '+num+'</h2><div class="rstate" style="color:#55637a">Estado actual: '+ESTADOS[r.estado].t+'</div>';
   body += '<div class="field"><label>Número</label><input id="ed-num" type="number" value="'+r.num+'"></div>';
   body += '<div class="field"><label>Piso</label><input id="ed-piso" type="number" min="1" value="'+r.piso+'"></div>';
-  body += '<div class="field"><label>Tipo</label><select id="ed-tipo">'+tipoOptions(r.tipo)+'</select></div>';
-  body += '<div class="field"><label>Tarifa (USD)</label><input id="ed-tarifa" type="number" min="0" step="0.01" value="'+(r.tarifa||0)+'"></div>';
+  body += '<div class="field"><label>Tipo</label><select id="ed-tipo" onchange="autoPrecioTipo(\'ed-tipo\',\'ed-tarifa\')">'+tipoOptions(r.tipo)+'</select></div>';
+  body += '<div class="field"><label>Tarifa (USD) <span style="color:#8893a5;font-weight:400;font-size:12px">(al cambiar el tipo se pone el precio base; puedes ajustarla)</span></label><input id="ed-tarifa" type="number" min="0" step="0.01" value="'+(r.tarifa||0)+'"></div>';
   body += '<div class="divider"></div><div class="actions"><button class="btn-green" onclick="saveRoomEdit('+num+')">Guardar cambios</button>';
   body += '<button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
   showModal(body);
@@ -1174,13 +1342,17 @@ function agregarTipo(){
   const el=document.getElementById('tipo-nuevo'); if(!el) return;
   const v=el.value.trim(); if(!v){ alert('Escribe un nombre para el tipo.'); return; }
   const ts=getTipos(); if(ts.some(x=>x.toLowerCase()===v.toLowerCase())){ alert('Ese tipo ya existe.'); return; }
-  ts.push(v); saveTipos(ts); render();
+  const pe=document.getElementById('tipo-nuevo-precio'); const precio=pe?(parseFloat(pe.value)||0):0;
+  ts.push(v); saveTipos(ts); setPrecioBaseTipo(v, precio); render();
 }
 function guardarTipo(i){
   const el=document.getElementById('tipo-'+i); if(!el) return;
   const v=el.value.trim(); if(!v){ alert('El nombre no puede quedar vacío.'); return; }
   const ts=getTipos(); if(ts.some((x,j)=>j!==i && x.toLowerCase()===v.toLowerCase())){ alert('Ya existe otro tipo con ese nombre.'); return; }
+  const pe=document.getElementById('tipo-precio-'+i); const precio=pe?(parseFloat(pe.value)||0):0;
   const viejo=ts[i]; ts[i]=v; saveTipos(ts);
+  // mover el precio base al nombre nuevo
+  const pm=getPreciosTipo(); if(viejo!==v){ delete pm[viejo]; } pm[v]=precio; DB.set('preciosTipo', pm);
   // renombrar el tipo en las habitaciones que lo usaban
   if(viejo!==v){ const r=rooms(); r.forEach(x=>{ if(x.tipo===viejo) x.tipo=v; }); saveRooms(r); }
   render(); alert('Tipo actualizado.');
@@ -1190,6 +1362,7 @@ function eliminarTipo(i){
   const usadas=rooms().filter(x=>x.tipo===ts[i]).length;
   const aviso='¿Eliminar el tipo "'+ts[i]+'"?'+(usadas?(' Hay '+usadas+' habitación(es) con este tipo; quedarán sin tipo hasta que las edites.'):'');
   if(!confirm(aviso)) return;
+  const pm=getPreciosTipo(); delete pm[ts[i]]; DB.set('preciosTipo', pm);
   ts.splice(i,1); saveTipos(ts); render();
 }
 
@@ -1252,7 +1425,7 @@ function renderCaja(){
   pagos.forEach(p=>{
     h += '<div class="task"><div class="info"><b>'+(p.hab?('Hab. '+p.hab):'Cobro manual')+'</b> <span style="font-size:12.5px;color:#55637a">'+esc(p.huesped||p.concepto||'')+'</span><div class="meta">'+(p.control?('Control N° '+fmtControl(p.control)+' · '):'')+p.metodo+' · '+p.fechaStr+' · '+esc(p.usuario||'')+'</div></div>';
     h += '<div style="text-align:right"><div style="font-weight:800;color:var(--azul)">'+fmtBs(p.montoBs)+'</div><div style="font-size:12px;color:#8893a5">'+fmtUSD(p.montoUsd)+'</div>';
-    if(session().rol==='admin') h += '<button class="btn-red" style="padding:4px 10px;margin-top:4px;font-size:12px" onclick="borrarPago('+p.id+')">Anular</button>';
+    if(session().rol==='admin' || puedeSup('anularPagos')) h += '<button class="btn-red" style="padding:4px 10px;margin-top:4px;font-size:12px" onclick="borrarPago('+p.id+')">Anular</button>';
     h += '</div></div>';
   });
   h += '</div>';
@@ -1298,7 +1471,7 @@ function guardarPagoManual(){
   logKardex('pago', {hab:0, huesped:clienteNom||concepto||'Cobro manual', clienteId:clienteId, detalle:'Cobro manual'+(clienteNom?(' · '+clienteNom):''), montoUsd:montoUsd, montoBs:montoBs, metodo:pm.metodoStr});
   cerrarModal(); render();
 }
-function borrarPago(id){ if(!confirm('¿Anular este cobro?')) return; DB.set('pagos', DB.get('pagos',[]).filter(p=>p.id!==id)); render(); }
+function borrarPago(id){ if(!(session().rol==='admin'||puedeSup('anularPagos'))){ alert('No tienes permiso para anular cobros.'); return; } if(!confirm('¿Anular este cobro?')) return; DB.set('pagos', DB.get('pagos',[]).filter(p=>p.id!==id)); render(); }
 
 /* ====== REPORTE DE ARQUEO (imprimir / exportar) ====== */
 function resumenCaja(fecha){
