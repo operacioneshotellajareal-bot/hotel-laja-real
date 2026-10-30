@@ -102,6 +102,20 @@ label{font-size:13px;font-weight:600;color:#44526a;}
     <button class="btn-primary" onclick="login()">Entrar</button>
     <div class="login-err" id="login-err"></div>
     <div class="hint" id="login-hint"></div>
+    <button class="btn-ghost" style="width:100%;margin-top:4px;font-size:12px" onclick="logoutCloud()">Desconectar esta PC de la nube</button>
+  </div>
+</div>
+
+<!-- ===== CONEXIÓN SEGURA A LA NUBE ===== -->
+<div id="view-cloud" style="display:none;align-items:center;justify-content:center;min-height:100vh;padding:20px">
+  <div class="login-card">
+    <h1>🔒 Conexión segura</h1>
+    <p class="sub">Ingresa el correo y la contraseña de tu hotel para conectar este equipo a la nube.</p>
+    <div class="field"><label>Correo</label><input id="cl-email" type="email" autocomplete="username" placeholder="correo@ejemplo.com"></div>
+    <div class="field"><label>Contraseña</label><input id="cl-pass" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+    <button class="btn-primary" onclick="cloudLogin()">Conectar</button>
+    <div class="login-err" id="cl-err"></div>
+    <div class="hint">Esta conexión se recuerda en este equipo. Solo tienes que hacerla una vez por computadora o teléfono.</div>
   </div>
 </div>
 
@@ -143,11 +157,63 @@ const DB = {
 const CLOUD = {
   ready:false,
   enabled: !!(SB_URL && SB_KEY),
+  authed:false,
+  token:null,
+  refreshToken:null,
   _cloudKeys:[],
-  _h(extra){ return Object.assign({'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'}, extra||{}); },
+  _h(extra){
+    const auth = this.token ? ('Bearer '+this.token) : ('Bearer '+SB_KEY);
+    return Object.assign({'apikey':SB_KEY,'Authorization':auth,'Content-Type':'application/json'}, extra||{});
+  },
+  setTokens(acc, ref){
+    this.token = acc || null;
+    if(ref) this.refreshToken = ref;
+    this.authed = !!this.token;
+    try{ localStorage.setItem('sbauth_token', this.token||''); localStorage.setItem('sbauth_refresh', this.refreshToken||''); }catch(e){}
+  },
+  clearTokens(){
+    this.token=null; this.refreshToken=null; this.authed=false;
+    try{ localStorage.removeItem('sbauth_token'); localStorage.removeItem('sbauth_refresh'); }catch(e){}
+  },
+  async signIn(email, pass){
+    const r = await fetch(SB_URL+'/auth/v1/token?grant_type=password', {
+      method:'POST', headers:{'apikey':SB_KEY,'Content-Type':'application/json'},
+      body: JSON.stringify({email:email, password:pass})
+    });
+    if(!r.ok) throw new Error('login '+r.status);
+    const d = await r.json();
+    if(!d.access_token) throw new Error('no token');
+    this.setTokens(d.access_token, d.refresh_token);
+  },
+  async doRefresh(){
+    if(!this.refreshToken) return false;
+    try{
+      const r = await fetch(SB_URL+'/auth/v1/token?grant_type=refresh_token', {
+        method:'POST', headers:{'apikey':SB_KEY,'Content-Type':'application/json'},
+        body: JSON.stringify({refresh_token:this.refreshToken})
+      });
+      if(!r.ok) return false;
+      const d = await r.json();
+      if(!d.access_token) return false;
+      this.setTokens(d.access_token, d.refresh_token);
+      return true;
+    }catch(e){ return false; }
+  },
+  async restore(){
+    try{ this.token = localStorage.getItem('sbauth_token')||null; this.refreshToken = localStorage.getItem('sbauth_refresh')||null; }catch(e){}
+    if(this.refreshToken){ const ok = await this.doRefresh(); this.authed = ok; return ok; }
+    this.authed = false; return false;
+  },
+  async api(path, opts){
+    opts = opts||{};
+    const mk = ()=> Object.assign({}, opts, {headers:this._h(opts.extraHeaders)});
+    let r = await fetch(SB_URL+path, mk());
+    if(r.status===401 && this.refreshToken){ if(await this.doRefresh()) r = await fetch(SB_URL+path, mk()); }
+    return r;
+  },
   async pullAll(){
     if(!this.enabled) return;
-    const r = await fetch(SB_URL+'/rest/v1/estado_app?select=clave,valor', {headers:this._h()});
+    const r = await this.api('/rest/v1/estado_app?select=clave,valor', {});
     if(!r.ok) throw new Error('pull '+r.status);
     const rows = await r.json();
     this._cloudKeys = rows.map(x=>x.clave);
@@ -157,9 +223,9 @@ const CLOUD = {
     if(!this.enabled || !this.ready) return;
     if(!SYNC_KEYS.includes(k)) return;
     try{
-      await fetch(SB_URL+'/rest/v1/estado_app?on_conflict=clave', {
+      await this.api('/rest/v1/estado_app?on_conflict=clave', {
         method:'POST',
-        headers:this._h({'Prefer':'resolution=merge-duplicates'}),
+        extraHeaders:{'Prefer':'resolution=merge-duplicates'},
         body: JSON.stringify({clave:k, valor:val, actualizado:new Date().toISOString()})
       });
     }catch(e){ /* sin conexión: queda guardado en el equipo y se subirá luego */ }
@@ -242,7 +308,29 @@ function login(){
 function logout(){ localStorage.removeItem('hotel_session'); location.reload(); }
 function session(){ return DB.get('session', null); }
 
+/* ---- Conexión segura a la nube (inicio de sesión de Supabase) ---- */
+function mostrarCloudLogin(){
+  document.getElementById('view-login').style.display='none';
+  document.getElementById('view-app').style.display='none';
+  document.getElementById('view-cloud').style.display='flex';
+}
+async function cloudLogin(){
+  const em=(document.getElementById('cl-email').value||'').trim();
+  const pw=document.getElementById('cl-pass').value;
+  const err=document.getElementById('cl-err');
+  if(!em||!pw){ err.innerText='Escribe el correo y la contraseña.'; return; }
+  err.style.color=''; err.innerText='Conectando…';
+  try{
+    await CLOUD.signIn(em, pw);
+    err.innerText=''; document.getElementById('cl-pass').value='';
+    document.getElementById('view-cloud').style.display='none';
+    await iniciarConNube();
+  }catch(e){ err.innerText='No se pudo conectar. Revisa el correo y la contraseña.'; }
+}
+function logoutCloud(){ CLOUD.clearTokens(); location.reload(); }
+
 document.getElementById('in-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
+document.getElementById('cl-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') cloudLogin(); });
 document.getElementById('login-hint').innerHTML =
   'Cuentas de prueba:<br>admin / admin &nbsp;·&nbsp; recepcion / 1234<br>limpieza / 1234 &nbsp;·&nbsp; mantenimiento / 1234';
 
@@ -1225,7 +1313,9 @@ function barraSeleccionHab(){
   if(n){
     h += '<button class="btn-green" style="padding:6px 12px" onclick="bulkPrecioModal()">Cambiar precio</button>';
     h += '<button class="btn-primary" style="padding:6px 12px" onclick="bulkTipoModal()">Cambiar tipo</button>';
+    h += '<button class="btn-gray" style="padding:6px 12px" onclick="bulkEstadoModal()">Cambiar estado</button>';
     h += '<button class="btn-red" style="padding:6px 12px" onclick="bulkEliminarHabs()">Eliminar</button>';
+    h += '<button class="btn-gray" style="padding:6px 12px" onclick="imprimirSelHabs()">Imprimir listado</button>';
     h += '<button class="btn-ghost" style="padding:6px 12px" onclick="limpiarSelHab()">Quitar selección</button>';
   }
   h += '</div>';
@@ -1259,6 +1349,49 @@ function aplicarBulkTipo(){
   const base=precioBaseTipo(t);
   const r=rooms(); r.forEach(x=>{ if(selHabs.has(x.num)){ x.tipo=t; if(ponerPrecio) x.tarifa=base; } }); saveRooms(r);
   cerrarModal(); render();
+}
+function bulkEstadoModal(){
+  const n=habsSeleccionadas().length; if(!n){ alert('No hay habitaciones seleccionadas.'); return; }
+  let body = '<button class="close" onclick="cerrarModal()">×</button><h2>Cambiar estado a '+n+' habitación(es)</h2>';
+  body += '<div class="field"><label>Nuevo estado</label><select id="bulk-estado">';
+  body += '<option value="libre">Libre</option>';
+  body += '<option value="sucia">Por limpiar</option>';
+  body += '<option value="limpieza">En limpieza</option>';
+  body += '<option value="mantenimiento" selected>Mantenimiento</option>';
+  body += '</select></div>';
+  body += '<p style="font-size:12px;color:#8893a5">Las habitaciones <b>ocupadas</b> no se cambian (primero haz el check-out). No se puede poner "Ocupada" en grupo: eso se hace con el check-in de cada huésped.</p>';
+  body += '<div class="divider"></div><div class="actions"><button class="btn-green" onclick="aplicarBulkEstado()">Aplicar</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  showModal(body);
+}
+function aplicarBulkEstado(){
+  const e=document.getElementById('bulk-estado').value;
+  if(!ESTADOS[e]||e==='ocupada'){ alert('Estado no válido.'); return; }
+  const sel=habsSeleccionadas();
+  const ocupadas=sel.filter(r=>r.estado==='ocupada');
+  const cambiables=sel.filter(r=>r.estado!=='ocupada');
+  if(cambiables.length===0){ alert('Todas las seleccionadas están ocupadas. Haz el check-out primero.'); return; }
+  const r=rooms(); r.forEach(x=>{ if(selHabs.has(x.num) && x.estado!=='ocupada') x.estado=e; }); saveRooms(r);
+  cerrarModal(); render();
+  if(ocupadas.length) setTimeout(function(){ alert('Listo. '+ocupadas.length+' habitación(es) ocupada(s) no se cambiaron.'); }, 100);
+}
+function imprimirSelHabs(){
+  const sel=habsSeleccionadas().slice().sort((a,b)=>a.num-b.num);
+  if(!sel.length){ alert('No hay habitaciones seleccionadas.'); return; }
+  let filas='';
+  sel.forEach(r=>{ filas+='<tr><td class="c">'+r.num+'</td><td class="c">'+r.piso+'</td><td>'+esc(r.tipo||'')+'</td><td class="r">'+fmtUSD(r.tarifa)+'</td><td>'+ESTADOS[r.estado].t+'</td></tr>'; });
+  let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Habitaciones seleccionadas</title>';
+  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}';
+  html+='h1{font-size:20px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 18px}';
+  html+='table{width:100%;border-collapse:collapse;margin-bottom:18px;font-size:13px}';
+  html+='th,td{border:1px solid #ccd;padding:7px 9px;text-align:left}th{background:#eef3fa;color:#44526a}';
+  html+='.r{text-align:right}.c{text-align:center}@media print{body{padding:0}}</style></head><body>';
+  html+=(hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>Habitaciones seleccionadas ('+sel.length+')</h1>'+hotelLinePrint()+'<div class="sub">Generado: '+new Date().toLocaleString('es-VE')+'</div>';
+  html+='<table><tr><th class="c">Hab.</th><th class="c">Piso</th><th>Tipo</th><th class="r">Tarifa</th><th>Estado</th></tr>'+filas+'</table>';
+  html+='</body></html>';
+  const w=window.open('','_blank');
+  if(!w){ alert('Permite las ventanas emergentes para poder imprimir.'); return; }
+  w.document.write(html); w.document.close(); w.focus();
+  setTimeout(function(){ w.print(); }, 400);
 }
 function bulkEliminarHabs(){
   const sel=habsSeleccionadas();
@@ -2151,6 +2284,7 @@ function hayFormularioActivo(){
 
 function startPolling(){
   if(!CLOUD.enabled) return;
+  setInterval(()=>{ CLOUD.doRefresh(); }, 40*60*1000);
   setInterval(async ()=>{
     try{
       const antes = {};
@@ -2166,13 +2300,20 @@ function startPolling(){
   }, 6000);
 }
 
-async function bootstrap(){
+async function iniciarConNube(){
   try{ await CLOUD.pullAll(); }catch(e){ /* sin conexión al iniciar: usamos datos del equipo */ }
   seed();                 // completa cajas que falten (sin pisar lo que ya hay)
   CLOUD.ready = true;
   try{ await CLOUD.pushMissing(); }catch(e){}  // primer equipo: sube lo que la nube aún no tiene
   aplicarTema(); pintarMarca(); openApp();
   startPolling();
+}
+async function bootstrap(){
+  aplicarTema(); pintarMarca();
+  if(!CLOUD.enabled){ await iniciarConNube(); return; }
+  const ok = await CLOUD.restore();
+  if(ok){ await iniciarConNube(); }
+  else { mostrarCloudLogin(); }
 }
 bootstrap();
 </script>
