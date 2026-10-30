@@ -87,7 +87,22 @@ label{font-size:13px;font-weight:600;color:#44526a;}
 .tabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;}
 .tab{background:#e3e8f0;color:#2c3a4f;padding:9px 16px;border-radius:20px;font-weight:600;font-size:13.5px;cursor:pointer;}
 .tab.active{background:var(--azul);color:#fff;}
-@media(max-width:600px){.rooms{grid-template-columns:repeat(auto-fill,minmax(78px,1fr));}}
+@media(max-width:600px){
+  .content{padding:14px;}
+  .section-title{font-size:17px;}
+  .topbar{padding:10px 14px;}
+  .topbar .brand{font-size:15px;}
+  .topbar .right{gap:8px;font-size:12px;}
+  .role-badge{padding:4px 9px;}
+  .stats{gap:8px;}
+  .stat{min-width:calc(50% - 4px);padding:11px 12px;}
+  .stat .n{font-size:21px;}
+  .rooms{grid-template-columns:repeat(auto-fill,minmax(78px,1fr));}
+  .tabs{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:5px;}
+  .tab{flex:0 0 auto;white-space:nowrap;padding:8px 13px;font-size:13px;}
+  .users-table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;}
+  .modal{padding:18px;}
+}
 </style>
 </head>
 <body>
@@ -201,6 +216,13 @@ const CLOUD = {
       const local = DB.get(k);
       if(local!==undefined && local!==null && !this._cloudKeys.includes(k)){ await this.push(k, local); }
     }
+  },
+  async clearAll(){
+    if(!this.enabled) return;
+    await this.ensureAuth();
+    let r = await fetch(SB_URL+'/rest/v1/estado_app?clave=not.is.null', {method:'DELETE', headers:this._h()});
+    if(r.status===401 && this._authEnabled){ await this.signIn(); r = await fetch(SB_URL+'/rest/v1/estado_app?clave=not.is.null', {method:'DELETE', headers:this._h()}); }
+    this._cloudKeys=[];
   }
 };
 
@@ -257,10 +279,11 @@ function countMasters(){ return DB.get('users',[]).filter(u=>esMaster(u.rol)).le
 const PERMISOS_CATALOGO=[
   ['anularPagos','Anular cobros en caja','Permite borrar/anular un cobro ya registrado en Caja.'],
   ['verReportePagos','Ver el reporte de pagos por fechas','Muestra la pestaña “Reporte de pagos” con los totales por rango.'],
-  ['gestionHab','Gestionar habitaciones, tipos y precios','Le da la pestaña “Habitaciones” para crear/editar habitaciones, tipos y precios base.']
+  ['gestionHab','Gestionar habitaciones, tipos y precios','Le da la pestaña “Habitaciones” para crear/editar habitaciones, tipos y precios base.'],
+  ['verResumenOcupacion','Ver resumen de ocupación','Muestra en el Mapa de habitaciones el panel con el % de ocupación y cuántas habitaciones hay libres y ocupadas (sin montos de dinero).']
 ];
 const ROLES_CONFIGURABLES=['recepcion','supervisor'];
-function permisosDefault(rol){ return {anularPagos:false, gestionHab:false, verReportePagos:true}; }
+function permisosDefault(rol){ return {anularPagos:false, gestionHab:false, verReportePagos:true, verResumenOcupacion:(rol==='supervisor')}; }
 function permisosDe(rol){ const p=DB.get('permisos',null); const sp=(p&&p[rol])?p[rol]:{}; return Object.assign(permisosDefault(rol), sp); }
 function setPermiso(rol,k,v){ const p=DB.get('permisos',{})||{}; if(!p[rol]) p[rol]={}; p[rol][k]=!!v; DB.set('permisos', p); }
 function puede(k){ const rol=session().rol; if(esMaster(rol)) return true; if(ROLES_CONFIGURABLES.indexOf(rol)>=0) return !!permisosDe(rol)[k]; return false; }
@@ -508,6 +531,7 @@ function renderRecepcion(){
   if(recepView==='clientes'){ c.innerHTML = html + renderClientes(); return; }
   if(recepView==='kardex'){ c.innerHTML = html + renderKardex(); return; }
   html += statsBar();
+  if(puede('verResumenOcupacion')) html += statsNegocio(true);
   html += legend();
   html += '<div style="display:flex;justify-content:flex-end;margin:0 0 4px"><button class="btn-gray" style="padding:6px 12px" onclick="imprimirListadoHabitaciones()">🖨️ Imprimir listado de habitaciones</button></div>';
   html += filtroTipoBar();
@@ -535,6 +559,35 @@ function statsBar(){
   defs.forEach(d=>{ h += '<div class="stat" style="border-left-color:'+d[2]+'"><div class="n">'+countBy(d[0])+'</div><div class="l">'+d[1]+'</div></div>'; });
   h += '<div class="stat" style="border-left-color:var(--azul2)"><div class="n">'+rooms().length+'</div><div class="l">Total hab.</div></div>';
   h += '</div>';
+  return h;
+}
+function statsNegocio(soloOcupacion){
+  const rs=rooms(); const total=rs.length||1;
+  const ocup=rs.filter(r=>r.estado==='ocupada').length;
+  const pct=Math.round(ocup*100/total);
+  const libres=rs.filter(r=>r.estado==='libre').length;
+  let h='<div class="stats">';
+  h+='<div class="stat" style="border-left-color:var(--morado)"><div class="n">'+pct+'%</div><div class="l">Ocupación ahora ('+ocup+' de '+total+')</div></div>';
+  if(soloOcupacion){
+    h+='<div class="stat" style="border-left-color:var(--verde)"><div class="n">'+libres+'</div><div class="l">Habitaciones libres</div></div>';
+    h+='<div class="stat" style="border-left-color:var(--rojo)"><div class="n">'+ocup+'</div><div class="l">Habitaciones ocupadas</div></div>';
+    h+='</div>';
+    return h;
+  }
+  const pad=n=>String(n).padStart(2,'0'); const now=new Date();
+  const hoy=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
+  const mes=now.getFullYear()+'-'+pad(now.getMonth()+1);
+  let hoyBs=0, mesBs=0, nHoy=0, nMes=0;
+  DB.get('pagos',[]).forEach(p=>{
+    if(!p.dia) return; const bs=Number(p.montoBs)||0; const d=String(p.dia);
+    if(d===hoy){ hoyBs+=bs; nHoy++; }
+    if(d.slice(0,7)===mes){ mesBs+=bs; nMes++; }
+  });
+  let nombreMes=now.toLocaleDateString('es-VE',{month:'long',year:'numeric'});
+  nombreMes=nombreMes.charAt(0).toUpperCase()+nombreMes.slice(1);
+  h+='<div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtBs(hoyBs)+'</div><div class="l">Ingresos de hoy ('+nHoy+' cobros)</div></div>';
+  h+='<div class="stat" style="border-left-color:var(--azul2)"><div class="n" style="font-size:20px">'+fmtBs(mesBs)+'</div><div class="l">Ingresos de '+esc(nombreMes)+' ('+nMes+' cobros)</div></div>';
+  h+='</div>';
   return h;
 }
 function legend(){
@@ -595,6 +648,7 @@ function abrirHab(num){
     body += '<div class="field" style="flex:1"><label>Noches</label><input id="m-noches" type="number" min="1" value="1" oninput="recalcCheckin('+num+')"></div></div>';
     body += '<div class="field"><label>Tarifa por noche (USD) — editable</label><input id="m-tarifa" type="number" min="0" step="0.01" value="'+(r.tarifa||0)+'" oninput="recalcCheckin('+num+')"></div>';
     body += '<div class="field"><label>Salida prevista</label><input id="m-salida" type="date"></div>';
+    body += '<div class="field"><label>¿Viene por una empresa? (opcional)</label><input id="m-empresaref" list="m-empresas-list" oninput="autoLlenarEmpresaCheckin()" placeholder="Escribe el código o nombre de la empresa"><datalist id="m-empresas-list">'+clientes().filter(c=>c.tipo==='empresa').map(e=>'<option value="'+escA(((e.codigo||'')+(e.nombre?(' — '+e.nombre):'')).trim())+'">').join('')+'</datalist><div id="m-empresa-info" style="display:none;background:#e9f8ee;border:1px solid #9fdcb4;border-radius:8px;padding:9px 11px;font-size:12.5px;color:#1d6b38;margin-top:6px"></div></div>';
     body += desgloseBox(r.tarifa, 1, 'in');
     body += '<div class="divider"></div><div class="actions">';
     body += '<button class="btn-green" onclick="checkin('+num+')">Confirmar check-in</button>';
@@ -634,6 +688,7 @@ function seleccionarCliente(){
   if(!id){ if(box) box.style.display='flex'; return; }
   const c=clientes().find(x=>x.id===id);
   if(c && inp){ inp.value = c.tipo==='empresa'?c.nombre:((c.nombre||'')+' '+(c.apellido||'')).trim(); }
+  const er=document.getElementById('m-empresaref'); if(er && c && c.tipo!=='empresa' && (c.empresaRef||'').trim()){ er.value=c.empresaRef; autoLlenarEmpresaCheckin(); }
   const chk=document.getElementById('m-guardar'); if(chk) chk.checked=false;
   if(box) box.style.display='none';
 }
@@ -686,10 +741,14 @@ function checkin(num){
   }
   const noches = parseInt(document.getElementById('m-noches').value)||1;
   const tarifa = parseFloat(document.getElementById('m-tarifa').value)||0;
+  const empRefEl=document.getElementById('m-empresaref'); const empRefRaw=empRefEl?empRefEl.value.trim():'';
+  const emp=empRefRaw?empresaPorRef(empRefRaw):null;
+  const empRef=emp?((emp.codigo||emp.nombre||empRefRaw)):empRefRaw;
+  if(emp && clienteId){ const _l=clientes(); const _c=_l.find(x=>x.id===clienteId); if(_c && _c.tipo!=='empresa' && !(_c.empresaRef||'').trim()){ _c.empresaRef=empRef; saveClientes(_l); } }
   updateRoom(num,{estado:'ocupada', huesped:h, clienteId:clienteId||'', personas:+document.getElementById('m-personas').value||1,
-    noches:noches, tarifa:tarifa,
+    noches:noches, tarifa:tarifa, empresaRef:empRef,
     checkin:new Date().toLocaleDateString('es-VE'), salida:document.getElementById('m-salida').value||''});
-  logKardex('checkin', {hab:num, huesped:h, clienteId:clienteId||'', detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche', montoUsd:0, montoBs:0, metodo:''});
+  logKardex('checkin', {hab:num, huesped:h, clienteId:clienteId||'', detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||empRef)):''), montoUsd:0, montoBs:0, metodo:''});
   abrirEstadia(clienteId||'', num, noches, tarifa);
   cerrarModal(); render();
 }
@@ -1117,6 +1176,7 @@ function renderAdmin(){
     tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','Reporte de pagos')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div>';
   if(adminTab==='resumen'){
     html += statsBar();
+    html += statsNegocio();
     const reps = DB.get('reportes',[]).filter(r=>r.estado!=='resuelto');
     html += '<div class="stat" style="border-left-color:var(--rojo);margin-bottom:18px"><div class="n">'+reps.length+'</div><div class="l">Reportes de mantenimiento pendientes</div></div>';
     html += legend();
@@ -1161,8 +1221,14 @@ function renderAdmin(){
     html += '<button class="btn-green" onclick="document.getElementById(\'resp-file\').click()">⬆️ Subir respaldo y restaurar</button>';
     html += '</div>';
     html += '<div style="background:#fff;padding:20px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05)">';
-    html += '<p style="margin-bottom:14px;color:#55637a;line-height:1.6">Reiniciar todos los datos devuelve las 65 habitaciones a <b>Libre</b> y borra reportes. Úsalo para empezar de cero.</p>';
-    html += '<button class="btn-red" onclick="resetData()">Reiniciar datos del hotel</button></div>';
+    html += '<p style="margin-bottom:14px;color:#55637a;line-height:1.6">Reiniciar devuelve las habitaciones a <b>Libre</b> y borra los reportes, pero <b>conserva</b> clientes, empresas, pagos y configuración.</p>';
+    html += '<button class="btn-red" onclick="resetData()">Reiniciar habitaciones y reportes</button></div>';
+    if(session() && esMaster(session().rol)){
+      html += '<div style="background:#fff;padding:20px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-top:18px;border:1px solid #f1c3c3">';
+      html += '<div class="section-title" style="font-size:15px;margin-top:0;color:#c0392b">⚠️ Borrar TODO y empezar de cero</div>';
+      html += '<p style="margin:0 0 14px;color:#55637a;line-height:1.6;font-size:13.5px">Borra <b>absolutamente todo</b> (habitaciones, clientes, empresas, pagos, caja, reportes, turnos, kardex, usuarios y configuración), en este equipo y en la nube, para dejar la app <b>limpia desde cero</b> y volver a configurarla. Al tocar el botón te pedirá tu <b>contraseña de Master</b>. <b>Esta acción no se puede deshacer</b> — te recomendamos descargar un respaldo antes.</p>';
+      html += '<button class="btn-red" onclick="borrarTodoDesdeCero()">🗑️ Borrar todo y empezar de cero</button></div>';
+    }
   }
   c.innerHTML = html;
 }
@@ -1268,6 +1334,22 @@ function deleteUser(user){
 function resetData(){
   if(!confirm('¿Seguro? Se borrarán ocupaciones y reportes.')) return;
   localStorage.removeItem('hotel_rooms'); localStorage.removeItem('hotel_reportes'); seed(); render();
+}
+async function borrarTodoDesdeCero(){
+  const me = session();
+  if(!me || !esMaster(me.rol)){ alert('Solo el Master / Dueño puede borrar todo.'); return; }
+  const esperada = ((DB.get('users',[]).find(u=>u.user===me.user)||{}).pass) || me.pass || '';
+  const ingresada = prompt('⚠️ Vas a BORRAR TODO y dejar la app desde cero.\n\nEscribe tu contraseña de Master para confirmar:');
+  if(ingresada===null) return;
+  if(String(ingresada) !== String(esperada)){ alert('Contraseña incorrecta. No se borró nada.'); return; }
+  if(!confirm('ÚLTIMA ADVERTENCIA\n\nSe borrarán TODOS los datos (habitaciones, clientes, empresas, pagos, caja, reportes, turnos, kardex, usuarios y configuración), en este equipo y en la nube.\n\n¿Seguro que quieres empezar de cero?')) return;
+  if(!confirm('Esto NO se puede deshacer.\n\n¿Confirmas borrar todo definitivamente?')) return;
+  try{ if(typeof CLOUD!=='undefined' && CLOUD.enabled){ await CLOUD.clearAll(); } }catch(e){}
+  try{ SYNC_KEYS.forEach(k=> localStorage.removeItem('hotel_'+k)); }catch(e){}
+  try{ localStorage.removeItem('hotel_session'); localStorage.removeItem('hotel_ultimoRespaldo'); }catch(e){}
+  try{ sessionStorage.removeItem('hotel_avisoRespaldo'); }catch(e){}
+  alert('Listo. Se borró todo.\n\nLa app se reiniciará limpia para que la vuelvas a configurar. Entra con el usuario admin y la contraseña admin.');
+  location.reload();
 }
 function exportarRespaldo(){
   const datos={};
@@ -1732,7 +1814,7 @@ function renderCaja(){
   h += '<div style="flex:1;min-width:160px"><label>Fecha del arqueo</label><input type="date" value="'+cajaFecha+'" onchange="setCajaFecha(this.value)"></div>';
   h += '<button class="btn-primary" onclick="pagoManualModal()">Registrar cobro manual</button>';
   h += '<button class="btn-gray" onclick="imprimirArqueo()">Imprimir / PDF</button>';
-  h += '<button class="btn-ghost" onclick="exportarCajaCSV()">Exportar CSV</button></div>';
+  h += '<button class="btn-ghost" onclick="exportarCajaCSV()">Exportar a Excel</button></div>';
   const porMetodo = {}; let totBs=0, totUsd=0;
   getMetodos().forEach(m=>porMetodo[m]={bs:0,usd:0,n:0});
   pagos.forEach(p=>{ if(Array.isArray(p.metodos)&&p.metodos.length){ p.metodos.forEach(m=>{ if(!porMetodo[m.metodo]) porMetodo[m.metodo]={bs:0,usd:0,n:0}; porMetodo[m.metodo].bs+=Number(m.montoBs)||0; porMetodo[m.metodo].usd+=Number(m.montoUsd)||0; porMetodo[m.metodo].n++; }); } else { if(!porMetodo[p.metodo]) porMetodo[p.metodo]={bs:0,usd:0,n:0}; porMetodo[p.metodo].bs+=p.montoBs; porMetodo[p.metodo].usd+=p.montoUsd; porMetodo[p.metodo].n++; } totBs+=p.montoBs; totUsd+=p.montoUsd; });
@@ -1852,14 +1934,10 @@ function imprimirArqueo(){
 }
 function exportarCajaCSV(){
   const pagos = DB.get('pagos',[]).filter(p=>p.dia===cajaFecha);
-  const q = s => '"'+String(s==null?'':s).replace(/"/g,'""')+'"';
-  let csv = 'Control,Ubicacion,Huesped/Concepto,Metodo,Fecha,Monto Bs,Monto USD,Usuario\n';
-  pagos.forEach(p=>{ csv += [q(p.control?fmtControl(p.control):''), q(p.hab?('Hab '+p.hab):'Manual'), q(p.huesped||p.concepto||''), q(p.metodo), q(p.fechaStr), q(Number(p.montoBs).toFixed(2)), q(Number(p.montoUsd).toFixed(2)), q(p.usuario||'')].join(',')+'\n'; });
-  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = 'arqueo_'+cajaFecha+'.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+  if(!pagos.length){ alert('No hay movimientos en esta caja para exportar.'); return; }
+  const headers=['Control','Ubicacion','Huesped/Concepto','Metodo','Fecha','Monto Bs','Monto USD','Usuario'];
+  const rows=pagos.map(p=>[p.control?fmtControl(p.control):'', p.hab?('Hab '+p.hab):'Manual', p.huesped||p.concepto||'', p.metodo, p.fechaStr, Number(p.montoBs).toFixed(2), Number(p.montoUsd).toFixed(2), p.usuario||'']);
+  _descargarXLS('arqueo_'+cajaFecha+'.xls', headers, rows);
 }
 
 /* ====== REPORTE DE PAGOS POR RANGO DE FECHAS ====== */
@@ -1897,7 +1975,7 @@ function renderReportePagos(){
   h += '<div style="flex:1;min-width:150px"><label>Hasta</label><input type="date" value="'+repHasta+'" onchange="setRepHasta(this.value)"></div>';
   h += '<div style="flex:1;min-width:160px"><label>Forma de pago</label><select onchange="setRepMetodo(this.value)"><option value="">Todas</option>'+getMetodos().map(m=>'<option'+(m===repMetodo?' selected':'')+'>'+esc(m)+'</option>').join('')+'</select></div>';
   h += '<button class="btn-gray" onclick="imprimirReportePagos()">Imprimir / PDF</button>';
-  h += '<button class="btn-ghost" onclick="exportarReporteCSV()">Exportar CSV</button></div>';
+  h += '<button class="btn-ghost" onclick="exportarReporteCSV()">Exportar a Excel</button></div>';
   h += '<div class="stats"><div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtBs(R.totBs)+'</div><div class="l">Total del periodo (Bs)</div></div>';
   h += '<div class="stat" style="border-left-color:var(--azul2)"><div class="n" style="font-size:20px">'+fmtUSD(R.totUsd)+'</div><div class="l">Equivalente USD</div></div>';
   h += '<div class="stat" style="border-left-color:var(--gris)"><div class="n">'+pagos.length+'</div><div class="l">Transacciones</div></div></div>';
@@ -1948,14 +2026,10 @@ function imprimirReportePagos(){
 function exportarReporteCSV(){
   let d=repDesde, hs=repHasta; if(d>hs){ const t=d; d=hs; hs=t; }
   const pagos = pagosEnRango();
-  const q = s => '"'+String(s==null?'':s).replace(/"/g,'""')+'"';
-  let csv = 'Control,Fecha,Ubicacion,Huesped/Concepto,Metodo,Monto Bs,Monto USD,Usuario\n';
-  pagos.forEach(p=>{ csv += [q(p.control?fmtControl(p.control):''), q(p.fechaStr||p.dia), q(p.hab?('Hab '+p.hab):'Manual'), q(p.huesped||p.concepto||''), q(p.metodo), q(Number(p.montoBs).toFixed(2)), q(Number(p.montoUsd).toFixed(2)), q(p.usuario||'')].join(',')+'\n'; });
-  const blob = new Blob(['\ufeff'+csv], {type:'text/csv;charset=utf-8'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob); a.download = 'reporte_pagos_'+d+'_a_'+hs+'.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+  if(!pagos.length){ alert('No hay pagos en ese rango de fechas para exportar.'); return; }
+  const headers=['Control','Fecha','Ubicacion','Huesped/Concepto','Metodo','Monto Bs','Monto USD','Usuario'];
+  const rows=pagos.map(p=>[p.control?fmtControl(p.control):'', p.fechaStr||p.dia, p.hab?('Hab '+p.hab):'Manual', p.huesped||p.concepto||'', p.metodo, Number(p.montoBs).toFixed(2), Number(p.montoUsd).toFixed(2), p.usuario||'']);
+  _descargarXLS('reporte_pagos_'+d+'_a_'+hs+'.xls', headers, rows);
 }
 
 /* ====== CLIENTES / EMPRESAS ====== */
@@ -2007,6 +2081,16 @@ function verClienteModal(id){
   if(cr.correo) body+=fichaLinea('Correo', cr.correo);
   if(cr.ocupacion) body+=fichaLinea(c.tipo==='empresa'?'Actividad':'Ocupación', cr.ocupacion);
   if(cr.ciudad) body+=fichaLinea('Ciudad', cr.ciudad);
+  if(c.telefono) body+=fichaLinea('Teléfono', c.telefono);
+  if(c.direccion) body+=fichaLinea('Dirección', c.direccion);
+  if(c.tipo==='empresa'){
+    if(c.codigo) body+=fichaLinea('Código', c.codigo);
+    if(c.tipoComp) body+=fichaLinea('Tipo de compañía', c.tipoComp);
+    if(c.diasCredito) body+=fichaLinea('Días de crédito', c.diasCredito);
+  } else {
+    if(c.edad) body+=fichaLinea('Edad', c.edad);
+    if(c.empresaRef) body+=fichaLinea('Viene por empresa', c.empresaRef);
+  }
   body+=fichaLinea('Registrado', fmtFecha(c.creado));
   body+='</div>';
   body+='<div class="section-title" style="font-size:14px;margin-top:0">Notas del cliente</div>';
@@ -2064,22 +2148,75 @@ function docTipoOptions(sel){
 }
 function docLabel(t){ return {V:'Cédula',E:'Extranjero',P:'Pasaporte',J:'RIF',G:'Gubernamental'}[t]||''; }
 function toggleClienteTipo(){
-  const t=document.getElementById('cl-tipo').value;
-  document.getElementById('cl-box-apellido').style.display = t==='empresa'?'none':'';
-  document.getElementById('cl-lbl-nombre').textContent = t==='empresa'?'Razón social / Nombre de la empresa':'Nombre';
-  document.getElementById('cl-lbl-ocup').textContent = t==='empresa'?'Actividad / Rubro':'Ocupación';
-  const dt=document.getElementById('cl-doctipo'); if(t==='empresa') dt.value='J';
+  const t=document.getElementById('cl-tipo').value; const esEmp=t==='empresa';
+  document.getElementById('cl-box-apellido').style.display = esEmp?'none':'';
+  document.getElementById('cl-lbl-nombre').textContent = esEmp?'Razón social / Nombre de la empresa':'Nombre';
+  document.getElementById('cl-lbl-ocup').textContent = esEmp?'Actividad / Rubro':'Ocupación';
+  const be=document.getElementById('cl-box-edad'); if(be) be.style.display=esEmp?'none':'';
+  const br=document.getElementById('cl-box-empresaref'); if(br) br.style.display=esEmp?'none':'';
+  const bc=document.getElementById('cl-box-empresa'); if(bc) bc.style.display=esEmp?'':'none';
+  const dt=document.getElementById('cl-doctipo'); if(esEmp) dt.value='J';
+}
+function nuevoCodigoEmpresa(){
+  const nums=clientes().filter(c=>c.tipo==='empresa').map(c=>{ const m=/^EMP-(\d+)$/.exec(String(c.codigo||'')); return m?parseInt(m[1],10):0; });
+  const max=nums.length?Math.max.apply(null,nums):0;
+  return 'EMP-'+String(max+1).padStart(4,'0');
+}
+function empresaPorRef(ref){
+  ref=(ref||'').trim(); if(!ref) return null;
+  const low=ref.toLowerCase();
+  const emps=clientes().filter(c=>c.tipo==='empresa');
+  let e=emps.find(x=>String(x.codigo||'').toLowerCase()===low);
+  if(!e) e=emps.find(x=>x.codigo && low.indexOf(String(x.codigo).toLowerCase())===0);
+  if(!e) e=emps.find(x=>String(x.nombre||'').toLowerCase()===low);
+  if(!e) e=emps.find(x=>x.codigo && low.indexOf(String(x.codigo).toLowerCase())>=0);
+  if(!e) e=emps.find(x=>x.nombre && low.indexOf(String(x.nombre).toLowerCase())>=0);
+  return e||null;
+}
+function autoLlenarEmpresa(){
+  const inp=document.getElementById('cl-empresaref'); if(!inp) return;
+  const info=document.getElementById('cl-empresa-info');
+  const e=empresaPorRef(inp.value);
+  if(!e){ if(info){ info.style.display='none'; info.innerHTML=''; } return; }
+  const tel=document.getElementById('cl-telefono'); if(tel && !tel.value.trim() && e.telefono) tel.value=e.telefono;
+  const dir=document.getElementById('cl-direccion'); if(dir && !dir.value.trim() && e.direccion) dir.value=e.direccion;
+  if(info){
+    let txt='✅ Empresa encontrada: <b>'+esc(e.nombre||'')+'</b>'+(e.codigo?(' ['+esc(e.codigo)+']'):'');
+    const d=[];
+    if(e.diasCredito) d.push('Crédito: '+esc(e.diasCredito)+' días');
+    if(e.tipoComp) d.push('Tipo: '+esc(e.tipoComp));
+    if(e.telefono) d.push('Tel: '+esc(e.telefono));
+    if(e.direccion) d.push('Dir: '+esc(e.direccion));
+    if(d.length) txt+='<br>'+d.join(' · ');
+    info.innerHTML=txt; info.style.display='';
+  }
+}
+function autoLlenarEmpresaCheckin(){
+  const inp=document.getElementById('m-empresaref'); if(!inp) return;
+  const info=document.getElementById('m-empresa-info');
+  const e=empresaPorRef(inp.value);
+  if(!e){ if(info){ info.style.display='none'; info.innerHTML=''; } return; }
+  if(info){
+    let txt='✅ Empresa encontrada: <b>'+esc(e.nombre||'')+'</b>'+(e.codigo?(' ['+esc(e.codigo)+']'):'');
+    const d=[];
+    if(e.diasCredito) d.push('Crédito: '+esc(e.diasCredito)+' días');
+    if(e.tipoComp) d.push('Tipo: '+esc(e.tipoComp));
+    if(e.telefono) d.push('Tel: '+esc(e.telefono));
+    if(e.direccion) d.push('Dir: '+esc(e.direccion));
+    if(d.length) txt+='<br>'+d.join(' · ');
+    info.innerHTML=txt; info.style.display='';
+  }
 }
 function clienteRows(){
   const q = clientBuscar.trim().toLowerCase();
   let list = clientes().slice().sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
-  if(q){ list = list.filter(c=>((c.nombre||'')+' '+(c.apellido||'')+' '+(c.docNum||'')+' '+(c.ciudad||'')+' '+(c.correo||'')).toLowerCase().includes(q)); }
+  if(q){ list = list.filter(c=>((c.nombre||'')+' '+(c.apellido||'')+' '+(c.docNum||'')+' '+(c.ciudad||'')+' '+(c.correo||'')+' '+(c.codigo||'')+' '+(c.telefono||'')+' '+(c.empresaRef||'')+' '+(c.tipoComp||'')).toLowerCase().includes(q)); }
   if(list.length===0) return '<div class="empty">No hay clientes que coincidan.</div>';
   let t='<table class="users-table"><tr><th>Nombre / Empresa</th><th>Documento</th><th>Correo</th><th>Ocupación</th><th>Ciudad</th><th style="text-align:right">Acciones</th></tr>';
   list.forEach(c=>{
     const nom = c.tipo==='empresa' ? esc(c.nombre) : esc(((c.nombre||'')+' '+(c.apellido||'')).trim());
     const doc = c.docNum ? esc(docLabel(c.docTipo)+' '+c.docNum) : '—';
-    t += '<tr><td><b>'+nom+'</b>'+(c.tipo==='empresa'?' <span style="font-size:11px;color:#8893a5">(Empresa)</span>':'')+'</td>'+
+    t += '<tr><td><b>'+nom+'</b>'+(c.tipo==='empresa'?' <span style="font-size:11px;color:#8893a5">(Empresa)</span>':'')+(c.tipo==='empresa'&&c.codigo?' <span style="font-size:11px;color:#1b6ca8;font-weight:700">['+esc(c.codigo)+']</span>':'')+'</td>'+
       '<td>'+doc+'</td><td>'+esc(c.correo||'—')+'</td><td>'+esc(c.ocupacion||'—')+'</td><td>'+esc(c.ciudad||'—')+'</td>'+
       '<td style="text-align:right;white-space:nowrap"><button class="btn-ghost" style="padding:6px 12px;margin-right:6px" onclick="verClienteModal(\''+c.id+'\')">Ver</button>'+
       '<button class="btn-ghost" style="padding:6px 12px;margin-right:6px" onclick="editClienteModal(\''+c.id+'\')">Editar</button>'+
@@ -2100,13 +2237,25 @@ function renderClientes(){
   h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:150px"><label>Correo</label><input id="cl-correo" type="email" placeholder="ejemplo@correo.com"></div>';
   h += '<div class="field" style="flex:1;min-width:150px"><label id="cl-lbl-ocup">Ocupación</label><input id="cl-ocup"></div></div>';
   h += '<div class="field"><label>Ciudad de procedencia</label><input id="cl-ciudad" placeholder="¿De dónde viene?"></div>';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:150px"><label>Teléfono</label><input id="cl-telefono" placeholder="ej: 0412-1234567"></div>';
+  h += '<div class="field" style="flex:1;min-width:120px" id="cl-box-edad"><label>Edad</label><input id="cl-edad" type="number" min="0" max="120" placeholder="ej: 35"></div></div>';
+  h += '<div class="field"><label>Dirección</label><input id="cl-direccion" placeholder="Dirección"></div>';
+  h += '<div class="field" id="cl-box-empresaref"><label>¿Viene por una empresa? (opcional)</label><input id="cl-empresaref" list="cl-empresas-list" oninput="autoLlenarEmpresa()" placeholder="Escribe el código o nombre de la empresa"><datalist id="cl-empresas-list">'+clientes().filter(c=>c.tipo==='empresa').map(e=>'<option value="'+escA(((e.codigo||'')+(e.nombre?(' — '+e.nombre):'')).trim())+'">').join('')+'</datalist><div id="cl-empresa-info" style="display:none;background:#e9f8ee;border:1px solid #9fdcb4;border-radius:8px;padding:9px 11px;font-size:12.5px;color:#1d6b38;margin-top:6px"></div></div>';
+  h += '<div id="cl-box-empresa" style="display:none">';
+  h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:150px"><label>Tipo de compañía</label><input id="cl-tipocomp" placeholder="ej: C.A., S.A., Agencia…"></div>';
+  h += '<div class="field" style="flex:1;min-width:120px"><label>Días de crédito</label><input id="cl-diascredito" type="number" min="0" placeholder="ej: 30"></div></div>';
+  h += '<div style="background:#eef6ff;border-radius:8px;padding:9px 11px;font-size:12.5px;color:#44526a;margin-bottom:4px">A cada empresa se le asigna un <b>código</b> automático al guardar, para poder buscarla fácilmente.</div>';
+  h += '</div>';
   h += '<button class="btn-primary" style="margin-top:10px" onclick="guardarCliente()">Guardar cliente</button></div>';
   const list = clientes();
   h += '<div class="section-title" style="font-size:15px">Clientes guardados ('+list.length+')</div>';
   h += '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">';
-  h += '<div class="field" style="flex:1;min-width:240px;max-width:380px;margin:0"><input id="cl-buscar" placeholder="Buscar por cédula, nombre, documento o ciudad…" value="'+escA(clientBuscar)+'" oninput="filtrarClientes()"></div>';
+  h += '<div class="field" style="flex:1;min-width:240px;max-width:380px;margin:0"><input id="cl-buscar" placeholder="Buscar por código, cédula, nombre, teléfono o ciudad…" value="'+escA(clientBuscar)+'" oninput="filtrarClientes()"></div>';
   h += '<button class="btn-primary" style="padding:8px 14px" onclick="imprimirResumenHuespedes()">Imprimir resumen</button>';
-  h += '<button class="btn-ghost" style="padding:8px 14px" onclick="exportarClientesCSV()">Exportar CSV</button>';
+  h += '<button class="btn-ghost" style="padding:8px 14px" onclick="exportarClientesCSV()">Exportar a Excel</button>';
+  h += '<button class="btn-ghost" style="padding:8px 14px" onclick="abrirImportarClientes()">Importar lista</button>';
+  h += '<button class="btn-ghost" style="padding:8px 14px" onclick="descargarPlantillaClientes()">Descargar plantilla (Excel)</button>';
+  h += '<input type="file" id="cl-import-file" accept=".csv,.xls,text/csv" style="display:none" onchange="importarClientesCSV(this)">';
   h += '</div>';
   h += '<div id="cl-lista">'+clienteRows()+'</div>';
   return h;
@@ -2144,19 +2293,109 @@ function imprimirResumenHuespedes(){
   const w=window.open('','_blank'); if(!w){alert('Permite las ventanas emergentes para poder imprimir.');return;}
   w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){w.print();},400);
 }
+function _csvDelim(text){
+  const first=(text.split(/\r?\n/)[0]||'');
+  const c=(first.match(/,/g)||[]).length, s=(first.match(/;/g)||[]).length, t=(first.match(/\t/g)||[]).length;
+  if(t>=c && t>=s && t>0) return '\t';
+  return s>c?';':',';
+}
+function _parseCSV(text, delim){
+  const rows=[]; let row=[]; let field=''; let inQ=false;
+  for(let i=0;i<text.length;i++){ const ch=text[i];
+    if(inQ){ if(ch==='"'){ if(text[i+1]==='"'){ field+='"'; i++; } else inQ=false; } else field+=ch; }
+    else { if(ch==='"') inQ=true; else if(ch===delim){ row.push(field); field=''; } else if(ch==='\n'){ row.push(field); rows.push(row); row=[]; field=''; } else if(ch==='\r'){} else field+=ch; }
+  }
+  if(field!==''||row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+function _descargarXLS(filename, headers, rows){
+  let html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table border="1">';
+  html+='<tr>'+headers.map(x=>'<th style="background:#eef2f7">'+esc(String(x==null?'':x))+'</th>').join('')+'</tr>';
+  rows.forEach(r=>{ html+='<tr>'+r.map(c=>'<td style="mso-number-format:\'\\@\'">'+esc(String(c==null?'':c))+'</td>').join('')+'</tr>'; });
+  html+='</table></body></html>';
+  const blob=new Blob(['\ufeff'+html],{type:'application/vnd.ms-excel;charset=utf-8'}); const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+}
+function _rowsFromHTML(text){
+  const doc=new DOMParser().parseFromString(text,'text/html');
+  const rows=[]; doc.querySelectorAll('tr').forEach(function(tr){ const r=[]; tr.querySelectorAll('th,td').forEach(function(td){ r.push((td.textContent||'').trim()); }); if(r.length) rows.push(r); });
+  return rows;
+}
+function descargarPlantillaClientes(){
+  const headers=['Tipo','Nombre','Apellido','Tipo documento','Numero documento','Correo','Telefono','Direccion','Edad','Viene por empresa','Tipo compania','Dias credito','Ocupacion','Ciudad','Codigo','Notas'];
+  const rows=[
+    ['persona','Juan','Pérez','V','12345678','juan@correo.com','0412-1112233','Av. Principal, Casa 5','35','EMP-0001','','','Comerciante','Barinas','','Cliente frecuente'],
+    ['empresa','Agencia Los Andes','','J','408123456','contacto@losandes.com','0276-5551020','Calle 10, Edif. Centro','','','Agencia de viajes','30','Turismo','Mérida','EMP-0001','']
+  ];
+  _descargarXLS('plantilla_clientes.xls', headers, rows);
+}
+function abrirImportarClientes(){ const el=document.getElementById('cl-import-file'); if(el){ el.value=''; el.click(); } }
+function importarClientesCSV(input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=function(){ try{ procesarImportClientes(String(rd.result||'')); }catch(err){ alert('No se pudo leer el archivo. Verifica que sea un CSV válido.\n\n'+err); } input.value=''; };
+  rd.readAsText(f,'UTF-8');
+}
 function exportarClientesCSV(){
   const list=clientes().slice().sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
   if(list.length===0){ alert('Todavía no hay huéspedes registrados.'); return; }
-  const q = s => '"'+String(s==null?'':s).replace(/"/g,'""')+'"';
-  let csv='Nombre,Apellido,Tipo,Documento,Correo,Ocupacion,Ciudad,Estadias completas,En curso,Noches totales,Total hospedado USD,Ultima visita,Notas\n';
-  list.forEach(c=>{
-    const r=resumenHuesped(c);
-    const doc = c.docNum?(docLabel(c.docTipo)+' '+c.docNum):'';
-    csv += [q(c.nombre||''),q(c.apellido||''),q(c.tipo||'persona'),q(doc),q(c.correo||''),q(c.ocupacion||''),q(c.ciudad||''),q(r.completas),q(r.activas),q(r.noches),q(r.totUsd.toFixed(2)),q(r.ultima?fmtFecha(r.ultima):''),q(c.notas||'')].join(',')+'\n';
+  const headers=['Codigo','Nombre','Apellido','Tipo','Tipo documento','Numero documento','Correo','Telefono','Direccion','Edad','Viene por empresa','Tipo compania','Dias credito','Ocupacion','Ciudad','Estadias completas','En curso','Noches totales','Total hospedado USD','Ultima visita','Notas'];
+  const rows=list.map(c=>{ const r=resumenHuesped(c);
+    return [c.codigo||'', c.nombre||'', c.apellido||'', c.tipo||'persona', c.docNum?docLabel(c.docTipo):'', c.docNum||'', c.correo||'', c.telefono||'', c.direccion||'', c.edad||'', c.empresaRef||'', c.tipoComp||'', c.diasCredito||'', c.ocupacion||'', c.ciudad||'', r.completas, r.activas, r.noches, r.totUsd.toFixed(2), r.ultima?fmtFecha(r.ultima):'', c.notas||''];
   });
-  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob); a.download='resumen_huespedes.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+  _descargarXLS('clientes_hotel.xls', headers, rows);
+}
+function procesarImportClientes(text){
+  text=text.replace(/^\ufeff/,'');
+  let rows;
+  if(/<\s*table|<\s*tr[\s>]/i.test(text.slice(0,2000))){ rows=_rowsFromHTML(text); }
+  else { const delim=_csvDelim(text); rows=_parseCSV(text, delim); }
+  rows=rows.filter(r=>r.some(x=>String(x).trim()!==''));
+  if(rows.length<2){ alert('El archivo no tiene datos. Debe tener una fila de títulos y al menos una fila con un cliente.'); return; }
+  const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+  const headers=rows[0].map(norm);
+  const idx=names=>{ for(const n of names){ const k=headers.indexOf(n); if(k>=0) return k; } return -1; };
+  const col={ tipo:idx(['tipo']), nombre:idx(['nombre','razon social','nombre de la empresa']), apellido:idx(['apellido','apellidos']),
+    docTipo:idx(['tipo documento','tipo de documento']), docNum:idx(['numero documento','numero de documento','n documento','nro documento']),
+    doc:idx(['documento','cedula','rif']), correo:idx(['correo','email','e-mail']), telefono:idx(['telefono','telefono movil','celular','movil']),
+    direccion:idx(['direccion']), edad:idx(['edad']), empresaRef:idx(['viene por empresa','viene por una empresa','empresa','empresa asociada']),
+    tipoComp:idx(['tipo compania','tipo de compania','tipo de empresa']), diasCredito:idx(['dias credito','dias de credito','credito']),
+    ocupacion:idx(['ocupacion','actividad','rubro']), ciudad:idx(['ciudad','ciudad de procedencia','procedencia']),
+    codigo:idx(['codigo','codigo empresa']), notas:idx(['notas','observaciones']) };
+  if(col.nombre<0){ alert('No encontré la columna "Nombre" en los títulos del archivo. Descarga la plantilla para ver el formato correcto.'); return; }
+  const g=(r,k)=> (k>=0 && k<r.length) ? String(r[k]||'').trim() : '';
+  const L2C={'cedula':'V','extranjero':'E','pasaporte':'P','rif':'J','gubernamental':'G','v':'V','e':'E','p':'P','j':'J','g':'G'};
+  const parseDoc=r=>{ let dt=g(r,col.docTipo), dn=g(r,col.docNum);
+    if(!dn && col.doc>=0){ const raw=g(r,col.doc); if(raw){ const parts=raw.split(/[\s-]+/).filter(Boolean); if(parts.length>=2 && L2C[norm(parts[0])]){ dt=parts[0]; dn=parts.slice(1).join(''); } else { dn=raw.replace(/\s+/g,''); } } }
+    if(dt){ dt=L2C[norm(dt)]||dt.toUpperCase().slice(0,1); }
+    if(['V','E','P','J','G'].indexOf(dt)<0) dt='V';
+    return {dt:dt, dn:dn}; };
+  const list=clientes();
+  const docKey=(dt,dn)=>norm(dt)+'|'+norm(dn);
+  const existDocs=new Set(list.filter(c=>c.docNum).map(c=>docKey(c.docTipo,c.docNum)));
+  const existCod=new Set(list.filter(c=>c.tipo==='empresa'&&c.codigo).map(c=>norm(c.codigo)));
+  const existNom=new Set(list.filter(c=>c.tipo==='empresa').map(c=>norm(c.nombre)));
+  let addP=0,addE=0,skip=0; const base=Date.now();
+  for(let i=1;i<rows.length;i++){ const r=rows[i];
+    const nombre=g(r,col.nombre); if(!nombre) continue;
+    const esEmp = norm(g(r,col.tipo)).indexOf('empresa')>=0 || norm(g(r,col.tipo))==='company';
+    if(esEmp){
+      let codigo=g(r,col.codigo); const nkey=norm(nombre);
+      if((codigo && existCod.has(norm(codigo))) || existNom.has(nkey)){ skip++; continue; }
+      if(!codigo) codigo=nuevoCodigoEmpresa();
+      const d=parseDoc(r);
+      const nuevo={id:'c'+(base+i), tipo:'empresa', nombre:nombre, apellido:'', docTipo:(d.dn?d.dt:'J'), docNum:d.dn, correo:g(r,col.correo), ocupacion:g(r,col.ocupacion), ciudad:g(r,col.ciudad), telefono:g(r,col.telefono), direccion:g(r,col.direccion), notas:g(r,col.notas), historial:[], creado:new Date().toISOString(), codigo:codigo, tipoComp:g(r,col.tipoComp), diasCredito:g(r,col.diasCredito)};
+      list.push(nuevo); existCod.add(norm(codigo)); existNom.add(nkey); if(d.dn) existDocs.add(docKey(d.dt,d.dn)); addE++;
+    } else {
+      const d=parseDoc(r);
+      if(d.dn && existDocs.has(docKey(d.dt,d.dn))){ skip++; continue; }
+      const nuevo={id:'c'+(base+i), tipo:'persona', nombre:nombre, apellido:g(r,col.apellido), docTipo:d.dt, docNum:d.dn, correo:g(r,col.correo), ocupacion:g(r,col.ocupacion), ciudad:g(r,col.ciudad), telefono:g(r,col.telefono), direccion:g(r,col.direccion), edad:g(r,col.edad), empresaRef:g(r,col.empresaRef), notas:g(r,col.notas), historial:[], creado:new Date().toISOString()};
+      list.push(nuevo); if(d.dn) existDocs.add(docKey(d.dt,d.dn)); addP++;
+    }
+  }
+  saveClientes(list); render();
+  alert('Importación terminada.\n\nAgregados: '+addP+' persona(s) y '+addE+' empresa(s).'+(skip?('\nOmitidos por estar repetidos: '+skip+'.'):'')+'\n\nYa quedaron guardados y sincronizados.');
 }
 function guardarCliente(){
   const tipo=document.getElementById('cl-tipo').value;
@@ -2167,15 +2406,27 @@ function guardarCliente(){
   const correo=document.getElementById('cl-correo').value.trim();
   const ocupacion=document.getElementById('cl-ocup').value.trim();
   const ciudad=document.getElementById('cl-ciudad').value.trim();
+  const telefono=document.getElementById('cl-telefono').value.trim();
+  const direccion=document.getElementById('cl-direccion').value.trim();
   if(!nombre){ alert(tipo==='empresa'?'Escribe el nombre de la empresa':'Escribe el nombre'); return; }
   if(correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)){ alert('El correo no parece válido'); return; }
   const list=clientes();
   if(docNum && list.find(c=>c.docNum===docNum && c.docTipo===docTipo)){ alert('Ya existe un cliente con ese documento'); return; }
   const nuevoId='c'+Date.now();
-  list.push({id:nuevoId, tipo:tipo, nombre:nombre, apellido:apellido, docTipo:docTipo, docNum:docNum, correo:correo, ocupacion:ocupacion, ciudad:ciudad, notas:'', historial:[], creado:new Date().toISOString()});
+  const nuevo={id:nuevoId, tipo:tipo, nombre:nombre, apellido:apellido, docTipo:docTipo, docNum:docNum, correo:correo, ocupacion:ocupacion, ciudad:ciudad, telefono:telefono, direccion:direccion, notas:'', historial:[], creado:new Date().toISOString()};
+  if(tipo==='empresa'){
+    nuevo.codigo=nuevoCodigoEmpresa();
+    nuevo.tipoComp=(document.getElementById('cl-tipocomp')?document.getElementById('cl-tipocomp').value.trim():'');
+    nuevo.diasCredito=(document.getElementById('cl-diascredito')?document.getElementById('cl-diascredito').value.trim():'');
+  } else {
+    nuevo.edad=(document.getElementById('cl-edad')?document.getElementById('cl-edad').value.trim():'');
+    nuevo.empresaRef=(document.getElementById('cl-empresaref')?document.getElementById('cl-empresaref').value.trim():'');
+  }
+  list.push(nuevo);
   saveClientes(list);
   const nomReg = tipo==='empresa'?nombre:((nombre+' '+apellido).trim());
   logKardex('cliente', {hab:0, huesped:nomReg, clienteId:nuevoId, detalle:'Cliente registrado'+(docNum?' · '+docLabel(docTipo)+' '+docNum:''), montoUsd:0, montoBs:0, metodo:''});
+  if(tipo==='empresa'){ alert('Empresa registrada con el código:  '+nuevo.codigo+'\n\nUsa este código para buscarla o para asociarla a un huésped que venga por ella.'); }
   render();
 }
 function editClienteModal(id){
@@ -2189,6 +2440,16 @@ function editClienteModal(id){
   body+='<div class="field"><label>Correo</label><input id="ec-correo" value="'+escA(c.correo||'')+'"></div>';
   body+='<div class="field"><label>Ocupación / Actividad</label><input id="ec-ocup" value="'+escA(c.ocupacion||'')+'"></div>';
   body+='<div class="field"><label>Ciudad de procedencia</label><input id="ec-ciudad" value="'+escA(c.ciudad||'')+'"></div>';
+  body+='<div class="field"><label>Teléfono</label><input id="ec-telefono" value="'+escA(c.telefono||'')+'"></div>';
+  body+='<div class="field"><label>Dirección</label><input id="ec-direccion" value="'+escA(c.direccion||'')+'"></div>';
+  if(c.tipo==='empresa'){
+    body+='<div class="field"><label>Código de la empresa</label><input id="ec-codigo" value="'+escA(c.codigo||'')+'"></div>';
+    body+='<div class="field"><label>Tipo de compañía</label><input id="ec-tipocomp" value="'+escA(c.tipoComp||'')+'"></div>';
+    body+='<div class="field"><label>Días de crédito</label><input id="ec-diascredito" type="number" min="0" value="'+escA(c.diasCredito||'')+'"></div>';
+  } else {
+    body+='<div class="field"><label>Edad</label><input id="ec-edad" type="number" min="0" max="120" value="'+escA(c.edad||'')+'"></div>';
+    body+='<div class="field"><label>¿Viene por una empresa?</label><input id="ec-empresaref" value="'+escA(c.empresaRef||'')+'"></div>';
+  }
   body+='<div class="field"><label>Notas</label><textarea id="ec-notas" rows="3" placeholder="Preferencias, acuerdos, observaciones…">'+esc(c.notas||'')+'</textarea></div>';
   body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="guardarEdicionCliente(\''+id+'\')">Guardar cambios</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
   showModal(body);
@@ -2208,6 +2469,9 @@ function guardarEdicionCliente(id){
     ciudad:document.getElementById('ec-ciudad').value.trim(),
     notas:(document.getElementById('ec-notas')?document.getElementById('ec-notas').value:(list[i].notas||''))
   });
+  const _v=function(id){ const e=document.getElementById(id); return e?e.value.trim():null; };
+  const _campos={telefono:'ec-telefono',direccion:'ec-direccion',codigo:'ec-codigo',tipoComp:'ec-tipocomp',diasCredito:'ec-diascredito',edad:'ec-edad',empresaRef:'ec-empresaref'};
+  Object.keys(_campos).forEach(function(k){ const val=_v(_campos[k]); if(val!==null) list[i][k]=val; });
   saveClientes(list); cerrarModal(); render();
 }
 function deleteCliente(id){
@@ -2282,7 +2546,7 @@ function turnoBloque(t){
   h += '<div style="flex:1;min-width:170px"><b>'+esc(t.nombre)+'</b> '+(t.abierto?'<span style="font-size:11px;color:var(--verde);font-weight:700">● ABIERTO</span>':'')+'<div style="font-size:12px;color:#55637a">'+fechaHoraCorta(t.inicio)+(t.fin?(' → '+fechaHoraCorta(t.fin)):'')+' · '+duracionTurno(t)+'</div></div>';
   h += '<div style="text-align:right"><div style="font-weight:800;color:var(--azul)">'+fmtBs(cobrBs)+'</div><div style="font-size:12px;color:#8893a5">'+fmtUSD(cobrUsd)+' · '+movs.length+' mov.</div></div>';
   h += '<button class="btn-ghost" style="padding:6px 12px" onclick="imprimirKardex(\''+t.id+'\')">Imprimir</button>';
-  h += '<button class="btn-ghost" style="padding:6px 12px" onclick="exportarKardexCSV(\''+t.id+'\')">CSV</button>';
+  h += '<button class="btn-ghost" style="padding:6px 12px" onclick="exportarKardexCSV(\''+t.id+'\')">Excel</button>';
   h += '</div>';
   if(movs.length===0){ h += '<div style="padding:16px;color:#8893a5;font-size:13px">Sin movimientos en este turno.</div></div>'; return h; }
   h += '<div style="overflow-x:auto"><table class="users-table" style="box-shadow:none;border-radius:0"><tr><th>Hora</th><th>Tipo</th><th>Hab.</th><th>Cliente / Huésped</th><th>Detalle</th><th style="text-align:right">Monto</th></tr>';
@@ -2295,12 +2559,10 @@ function turnoBloque(t){
 }
 function exportarKardexCSV(turnoId){
   const t = turnos().find(x=>x.id===turnoId); const movs = kardexDeTurno(turnoId);
-  const q = s => '"'+String(s==null?'':s).replace(/"/g,'""')+'"';
-  let csv='Hora,Tipo,Habitacion,Cliente/Huesped,Detalle,Metodo,Monto Bs,Monto USD\n';
-  movs.forEach(m=>{ const k=KTIPO[m.tipo]||{t:m.tipo}; csv += [q(fechaHoraCorta(m.ts)),q(k.t),q(m.hab||''),q(m.huesped||''),q(m.detalle||''),q(m.metodo||''),q(Number(m.montoBs||0).toFixed(2)),q(Number(m.montoUsd||0).toFixed(2))].join(',')+'\n'; });
-  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob); a.download='kardex_'+(t?t.nombre.replace(/\s+/g,'_'):turnoId)+'.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+  if(!movs.length){ alert('No hay movimientos en este turno para exportar.'); return; }
+  const headers=['Hora','Tipo','Habitacion','Cliente/Huesped','Detalle','Metodo','Monto Bs','Monto USD'];
+  const rows=movs.map(m=>{ const k=KTIPO[m.tipo]||{t:m.tipo}; return [fechaHoraCorta(m.ts), k.t, m.hab||'', m.huesped||'', m.detalle||'', m.metodo||'', Number(m.montoBs||0).toFixed(2), Number(m.montoUsd||0).toFixed(2)]; });
+  _descargarXLS('kardex_'+(t?t.nombre.replace(/\s+/g,'_'):turnoId)+'.xls', headers, rows);
 }
 function imprimirKardex(turnoId){
   const t=turnos().find(x=>x.id===turnoId); const movs=kardexDeTurno(turnoId);
