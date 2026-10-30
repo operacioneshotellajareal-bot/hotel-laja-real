@@ -133,7 +133,7 @@ const SB_APP_EMAIL = 'operador@hotellajareal.com';
 const SB_APP_PASS  = 'LajaReal2026-Caja';
 /* Cajas de datos que se comparten entre todos los equipos.
    OJO: 'session' NO se comparte (cada equipo inicia sesión aparte). */
-const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia'];
+const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion'];
 
 /* ====== ALMACENAMIENTO (local + nube) ====== */
 const DB = {
@@ -253,11 +253,21 @@ function rolOptions(sel){
   return opts.map(o=>'<option value="'+o[0]+'"'+(o[0]===sel?' selected':'')+'>'+o[1]+'</option>').join('');
 }
 function countMasters(){ return DB.get('users',[]).filter(u=>esMaster(u.rol)).length; }
-/* ---- Permisos del Supervisor de recepción (configurables por el Master) ---- */
-function permisosSupDefault(){ return {anularPagos:false, gestionHab:false, verReportePagos:true}; }
-function permisosSup(){ const p=DB.get('permisos',null); const sp=(p&&p.supervisor)?p.supervisor:{}; return Object.assign(permisosSupDefault(), sp); }
-function setPermisoSup(k,v){ const p=DB.get('permisos',{})||{}; if(!p.supervisor) p.supervisor={}; p.supervisor[k]=!!v; DB.set('permisos', p); }
-function puedeSup(k){ const rol=session().rol; if(esMaster(rol)) return true; if(rol==='supervisor') return !!permisosSup()[k]; return false; }
+/* ---- Permisos configurables por rol (los decide el Master) ---- */
+const PERMISOS_CATALOGO=[
+  ['anularPagos','Anular cobros en caja','Permite borrar/anular un cobro ya registrado en Caja.'],
+  ['verReportePagos','Ver el reporte de pagos por fechas','Muestra la pestaña “Reporte de pagos” con los totales por rango.'],
+  ['gestionHab','Gestionar habitaciones, tipos y precios','Le da la pestaña “Habitaciones” para crear/editar habitaciones, tipos y precios base.']
+];
+const ROLES_CONFIGURABLES=['recepcion','supervisor'];
+function permisosDefault(rol){ return {anularPagos:false, gestionHab:false, verReportePagos:true}; }
+function permisosDe(rol){ const p=DB.get('permisos',null); const sp=(p&&p[rol])?p[rol]:{}; return Object.assign(permisosDefault(rol), sp); }
+function setPermiso(rol,k,v){ const p=DB.get('permisos',{})||{}; if(!p[rol]) p[rol]={}; p[rol][k]=!!v; DB.set('permisos', p); }
+function puede(k){ const rol=session().rol; if(esMaster(rol)) return true; if(ROLES_CONFIGURABLES.indexOf(rol)>=0) return !!permisosDe(rol)[k]; return false; }
+/* compatibilidad con código anterior */
+function permisosSup(){ return permisosDe('supervisor'); }
+function setPermisoSup(k,v){ setPermiso('supervisor',k,v); }
+function puedeSup(k){ return puede(k); }
 
 /* ====== SESIÓN / LOGIN ====== */
 async function login(){
@@ -333,6 +343,7 @@ function openApp(){
   document.getElementById('role-badge').innerText = ROLES[s.rol]||s.rol;
   iniciarPresencia();
   render();
+  avisarRespaldo();
 }
 
 /* ====== RENDER PRINCIPAL ====== */
@@ -466,11 +477,13 @@ function recepTab(id,label){ return '<div class="tab '+(recepView===id?'active':
 function renderRecepcion(){
   const c = document.getElementById('content');
   let html = '<div class="section-title">Panel de Recepción</div>';
-  const esSup = session().rol==='supervisor';
-  // Pestañas según permisos (el supervisor puede tener permisos recortados o ampliados)
-  const verReporte = esSup ? permisosSup().verReportePagos : true;
-  const verGestionHab = esSup ? permisosSup().gestionHab : false;
-  if(esSup){ // evitar quedar en una pestaña sin permiso
+  const _rol = session().rol;
+  const esConfig = ROLES_CONFIGURABLES.indexOf(_rol)>=0;
+  // Pestañas según los permisos que el Master activó para este rol
+  const _perm = permisosDe(_rol);
+  const verReporte = esConfig ? _perm.verReportePagos : true;
+  const verGestionHab = esConfig ? _perm.gestionHab : false;
+  if(esConfig){ // evitar quedar en una pestaña sin permiso
     if(recepView==='reportes' && !verReporte) recepView='mapa';
     if(recepView==='habitaciones' && !verGestionHab) recepView='mapa';
   }
@@ -496,6 +509,7 @@ function renderRecepcion(){
   if(recepView==='kardex'){ c.innerHTML = html + renderKardex(); return; }
   html += statsBar();
   html += legend();
+  html += '<div style="display:flex;justify-content:flex-end;margin:0 0 4px"><button class="btn-gray" style="padding:6px 12px" onclick="imprimirListadoHabitaciones()">🖨️ Imprimir listado de habitaciones</button></div>';
   html += filtroTipoBar();
   pisos().forEach(p=>{
     const list = rooms().filter(r=>r.piso===p && (!habFiltroTipo || r.tipo===habFiltroTipo));
@@ -935,7 +949,15 @@ function confirmarCambioHab(origen){
   alert('Huésped mudado a la habitación '+destinoNum+'.');
 }
 function hotelNombre(){ const h=hotel(); return h.nombre||'Comprobante de Hospedaje'; }
-function hotelLinePrint(){ const h=hotel(); const bits=[]; if(h.rif) bits.push('RIF: '+h.rif); if(h.direccion) bits.push(h.direccion); return bits.length?('<div style="color:#667;font-size:12px;margin:2px 0 10px">'+esc(bits.join(' · '))+'</div>'):''; }
+/* ---- Configuración de impresión (la decide el Master) ---- */
+function impConfigDefault(){ return {mostrarLogo:true, mostrarRif:true, mostrarDireccion:true, mostrarEslogan:false, piePagina:'', notaRecibo:'', mostrarFirmas:true, colPiso:true, colTipo:true, colTarifa:true, colEstado:true, escalaImpresion:1, titulos:{}}; }
+function impConfig(){ return Object.assign(impConfigDefault(), DB.get('impresion',{})||{}); }
+function setImp(k,v){ const c=DB.get('impresion',{})||{}; c[k]=v; DB.set('impresion',c); }
+function escalaImpresion(){ const v=parseFloat(impConfig().escalaImpresion); return (v&&v>0)?v:1; }
+function tituloDoc(k,def){ const t=impConfig().titulos||{}; const v=((t[k]!==undefined?t[k]:'')+'').trim(); return v||def; }
+function setTitulo(k,v){ const c=DB.get('impresion',{})||{}; if(!c.titulos) c.titulos={}; c.titulos[k]=v; DB.set('impresion',c); }
+function piePaginaHTML(){ const t=(impConfig().piePagina||'').trim(); if(!t) return ''; return '<div style="margin-top:34px;padding-top:10px;border-top:1px solid #ccd;text-align:center;color:#667;font-size:12px;white-space:pre-line">'+esc(t)+'</div>'; }
+function hotelLinePrint(){ const h=hotel(); const c=impConfig(); const bits=[]; if(c.mostrarRif && h.rif) bits.push('RIF: '+h.rif); if(c.mostrarDireccion && h.direccion) bits.push(h.direccion); if(c.mostrarEslogan && h.eslogan) bits.push(h.eslogan); return bits.length?('<div style="color:#667;font-size:12px;margin:2px 0 10px">'+esc(bits.join(' · '))+'</div>'):''; }
 function imprimirRecibo(num){
   const r = findRoom(num);
   const noches = r.noches||1; const hosp = Number(r.tarifa||0)*noches;
@@ -962,10 +984,10 @@ function imprimirRecibo(num){
   html += 'td{border:1px solid #ccd;padding:7px 9px}td:first-child{color:#55637a;width:45%}';
   html += '.tot{background:#f3f6fb}.tot td{font-weight:800;color:#0d3b66;font-size:16px}';
   html += '.firmas{display:flex;gap:40px;margin-top:46px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}';
-  html += '@media print{body{padding:0}}</style></head><body>';
+  html += '@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
   const _hl=hotel(); const _lsz=Math.max(40,(parseInt(_hl.logoSize)||52)+6); const _lwv=parseInt(_hl.logoWidth)||0; const _lw=_lwv>0?(_lwv+'px'):'auto';
-  const _logo=_hl.logo?('<img src="'+_hl.logo+'" alt="logo" style="height:'+_lsz+'px;width:'+_lw+';max-width:280px;object-fit:contain;border-radius:10px;flex:0 0 auto">'):'';
-  html += '<div style="display:flex;align-items:center;gap:14px">'+_logo+'<div><h1>'+esc(hotelNombre())+'</h1>'+hotelLinePrint()+'</div></div><div class="sub">Recibo de hospedaje · Control N° '+fmtControl(ctrlRecibo)+' · Habitación '+num+' · Emitido: '+now.toLocaleString('es-VE')+'</div>';
+  const _logo=(_hl.logo && impConfig().mostrarLogo)?('<img src="'+_hl.logo+'" alt="logo" style="height:'+_lsz+'px;width:'+_lw+';max-width:280px;object-fit:contain;border-radius:10px;flex:0 0 auto">'):'';
+  html += '<div style="display:flex;align-items:center;gap:14px">'+_logo+'<div><h1>'+esc(hotelNombre())+'</h1>'+hotelLinePrint()+'</div></div><div class="sub">'+esc(tituloDoc('recibo','Recibo de hospedaje'))+' · Control N° '+fmtControl(ctrlRecibo)+' · Habitación '+num+' · Emitido: '+now.toLocaleString('es-VE')+'</div>';
   if(filasCli){ html += '<h2>Datos del cliente</h2><table>'+filasCli+'</table>'; }
   html += '<h2>Detalle de la estadía</h2><table>';
   html += '<tr><td>Huésped</td><td>'+esc(r.huesped||'—')+'</td></tr>';
@@ -980,8 +1002,9 @@ function imprimirRecibo(num){
   html += '</table><h2>Total a pagar</h2><table>';
   html += '<tr class="tot"><td>Total USD</td><td>'+fmtUSD(totUsd)+'</td></tr>';
   html += '<tr class="tot"><td>Total Bs</td><td>'+fmtBs(precioBs(totUsd))+'</td></tr></table>';
-  html += '<div class="firmas"><div class="firma">Recibido conforme<br>(Huésped)</div><div class="firma">Atendido por<br>(Recepción)</div></div>';
-  html += '</body></html>';
+  { const _nota=(impConfig().notaRecibo||'').trim(); if(_nota) html += '<div style="margin-top:14px;font-size:12.5px;color:#44526a;white-space:pre-line">'+esc(_nota)+'</div>'; }
+  if(impConfig().mostrarFirmas) html += '<div class="firmas"><div class="firma">Recibido conforme<br>(Huésped)</div><div class="firma">Atendido por<br>(Recepción)</div></div>';
+  html += piePaginaHTML()+'</body></html>';
   const w = window.open('','_blank');
   if(!w){ alert('Permite las ventanas emergentes para poder imprimir.'); return; }
   w.document.write(html); w.document.close(); w.focus();
@@ -1091,7 +1114,7 @@ function renderAdmin(){
   const c = document.getElementById('content');
   let html = '<div class="section-title">Panel de Administración</div>';
   html += '<div class="tabs">'+
-    tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','Reporte de pagos')+tabBtn('hotel','Hotel')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div>';
+    tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','Reporte de pagos')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div>';
   if(adminTab==='resumen'){
     html += statsBar();
     const reps = DB.get('reportes',[]).filter(r=>r.estado!=='resuelto');
@@ -1117,6 +1140,8 @@ function renderAdmin(){
     html += renderKardex();
   } else if(adminTab==='hotel'){
     html += renderIdentidad();
+  } else if(adminTab==='impresion'){
+    html += renderImpresion();
   } else if(adminTab==='tasa'){
     html += renderTasa();
   } else if(adminTab==='caja'){
@@ -1124,7 +1149,18 @@ function renderAdmin(){
   } else if(adminTab==='reportes'){
     html += renderReportePagos();
   } else {
-    html += '<div style="background:#fff;padding:20px;border-radius:12px;max-width:480px;box-shadow:0 2px 8px rgba(0,0,0,.05)">';
+    html += '<div style="background:#fff;padding:20px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:18px">';
+    html += '<div class="section-title" style="font-size:15px;margin-top:0">Respaldo de la base de datos</div>';
+    html += '<p style="margin:0 0 12px;color:#55637a;line-height:1.6;font-size:13.5px">Guarda <b>todos los datos</b> (habitaciones, clientes, pagos, usuarios, configuración...) en un archivo en tu computadora. Lo puedes volver a cargar cuando quieras para restaurarlos.</p>';
+    html += '<button class="btn-primary" onclick="exportarRespaldo()">⬇️ Descargar respaldo</button>';
+    var _rv = respaldoVencido();
+    html += '<div style="margin-top:12px;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.5;'+(_rv?'background:#fff4e5;color:#8a5200;border:1px solid #ffd59a':'background:#eaf7ee;color:#1f6b35;border:1px solid #bfe6cb')+'">'+textoUltimoRespaldo()+(_rv?'<br><b>Te recomendamos descargar un respaldo ahora.</b>':'')+'</div>';
+    html += '<div class="divider"></div>';
+    html += '<p style="margin:0 0 10px;color:#55637a;line-height:1.6;font-size:13.5px">Para <b>restaurar</b>, elige un archivo de respaldo. <b>Atención:</b> reemplaza los datos actuales por los del archivo (en este equipo y en la nube).</p>';
+    html += '<input type="file" id="resp-file" accept="application/json,.json" onchange="importarRespaldo(event)" style="display:none">';
+    html += '<button class="btn-green" onclick="document.getElementById(\'resp-file\').click()">⬆️ Subir respaldo y restaurar</button>';
+    html += '</div>';
+    html += '<div style="background:#fff;padding:20px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05)">';
     html += '<p style="margin-bottom:14px;color:#55637a;line-height:1.6">Reiniciar todos los datos devuelve las 65 habitaciones a <b>Libre</b> y borra reportes. Úsalo para empezar de cero.</p>';
     html += '<button class="btn-red" onclick="resetData()">Reiniciar datos del hotel</button></div>';
   }
@@ -1150,7 +1186,7 @@ function renderUsuarios(){
   html += '<div class="field"><label>Rol</label><select id="u-rol">'+rolOptions('recepcion')+'</select></div>';
   html += '<button class="btn-primary" style="margin-top:10px" onclick="addUser()">Crear usuario</button></div>';
   html += renderEnLinea();
-  html += renderPermisosSupervisor();
+  html += renderPermisosRoles();
   return html;
 }
 function renderEnLinea(){
@@ -1165,21 +1201,26 @@ function renderEnLinea(){
   h+='<div style="font-size:11.5px;color:#8893a5;margin-top:8px">Se actualiza solo cada pocos segundos. Cada equipo cuenta como una sesión.</div></div>';
   return h;
 }
-function renderPermisosSupervisor(){
-  const p=permisosSup();
-  const nSup=DB.get('users',[]).filter(u=>u.rol==='supervisor').length;
-  let h='<div class="divider"></div><div class="section-title" style="font-size:15px">Permisos del Supervisor de recepción</div>';
-  h+='<div style="background:#fff;padding:18px;border-radius:12px;max-width:520px;box-shadow:0 2px 8px rgba(0,0,0,.05)">';
-  h+='<p style="font-size:12px;color:#8893a5;margin-top:0">El Supervisor ve lo mismo que un Recepcionista. Aquí decides qué cosas <b>extra</b> puede hacer. Afecta a todos los usuarios con rol “Supervisor de recepción”'+(nSup?(' (ahora hay '+nSup+')'):' (ahora no hay ninguno)')+'.</p>';
-  h+=permisoRow('anularPagos','Anular cobros en caja','Permite borrar/anular un cobro ya registrado en Caja.', p.anularPagos);
-  h+=permisoRow('verReportePagos','Ver el reporte de pagos por fechas','Muestra la pestaña “Reporte de pagos” con los totales por rango.', p.verReportePagos);
-  h+=permisoRow('gestionHab','Gestionar habitaciones, tipos y precios','Le da la pestaña “Habitaciones” para crear/editar habitaciones, tipos y precios base.', p.gestionHab);
+function renderPermisosRoles(){
+  let h='<div class="divider"></div><div class="section-title" style="font-size:15px">Permisos por rol</div>';
+  h+='<p style="font-size:12.5px;color:#8893a5;margin-top:0;max-width:520px">Activa o desactiva lo que puede hacer cada rol. El cambio afecta a <b>todos</b> los usuarios que tengan ese rol. El <b>Master</b> siempre puede hacerlo todo.</p>';
+  h+=bloquePermiso('recepcion','Recepcionista');
+  h+=bloquePermiso('supervisor','Supervisor de recepción');
+  return h;
+}
+function bloquePermiso(rol,titulo){
+  const p=permisosDe(rol);
+  const n=DB.get('users',[]).filter(u=>u.rol===rol).length;
+  let h='<div style="background:#fff;padding:18px;border-radius:12px;max-width:520px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:14px">';
+  h+='<div style="font-weight:700;color:var(--azul);font-size:15px">'+titulo+'</div>';
+  h+='<div style="font-size:12px;color:#8893a5;margin-bottom:4px">'+(n?('Ahora hay '+n+' usuario(s) con este rol.'):'Ahora no hay ningún usuario con este rol.')+'</div>';
+  PERMISOS_CATALOGO.forEach(function(c){ h+=permisoRow2(rol,c[0],c[1],c[2],!!p[c[0]]); });
   h+='</div>';
   return h;
 }
-function permisoRow(k,titulo,desc,on){
+function permisoRow2(rol,k,titulo,desc,on){
   return '<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid #eef1f6;cursor:pointer">'+
-    '<input type="checkbox" '+(on?'checked':'')+' onchange="setPermisoSup(\''+k+'\',this.checked);render()" style="width:auto;margin-top:3px">'+
+    '<input type="checkbox" '+(on?'checked':'')+' onchange="setPermiso(\''+rol+'\',\''+k+'\',this.checked);render()" style="width:auto;margin-top:3px">'+
     '<span><b style="font-size:14px">'+titulo+'</b><div style="font-size:12px;color:#8893a5">'+desc+'</div></span></label>';
 }
 function addUser(){
@@ -1227,6 +1268,67 @@ function deleteUser(user){
 function resetData(){
   if(!confirm('¿Seguro? Se borrarán ocupaciones y reportes.')) return;
   localStorage.removeItem('hotel_rooms'); localStorage.removeItem('hotel_reportes'); seed(); render();
+}
+function exportarRespaldo(){
+  const datos={};
+  SYNC_KEYS.forEach(k=>{ const v=DB.get(k); if(v!==undefined) datos[k]=v; });
+  const paquete={ _app:'hotel-laja-real', _version:1, _fecha:new Date().toISOString(), hotel:(hotel().nombre||''), datos:datos };
+  const txt=JSON.stringify(paquete,null,2);
+  const blob=new Blob([txt],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const pad=n=>String(n).padStart(2,'0'); const f=new Date();
+  const a=document.createElement('a');
+  a.href=url; a.download='respaldo-hotel-'+f.getFullYear()+pad(f.getMonth()+1)+pad(f.getDate())+'-'+pad(f.getHours())+pad(f.getMinutes())+'.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} }, 2000);
+  marcarRespaldo();
+  try{ if(session()) render(); }catch(e){}
+}
+/* ====== RECORDATORIO DE RESPALDO ====== */
+function ultimoRespaldoISO(){ try{ return localStorage.getItem('hotel_ultimoRespaldo')||''; }catch(e){ return ''; } }
+function marcarRespaldo(){ try{ localStorage.setItem('hotel_ultimoRespaldo', new Date().toISOString()); }catch(e){} }
+function diasDesdeRespaldo(){ const iso=ultimoRespaldoISO(); if(!iso) return null; return (Date.now()-new Date(iso).getTime())/86400000; }
+function respaldoVencido(){ const d=diasDesdeRespaldo(); return (d===null || d>=7); }
+function textoUltimoRespaldo(){
+  const iso=ultimoRespaldoISO();
+  if(!iso) return '⚠️ Todavía no has descargado ningún respaldo en este equipo.';
+  const f=new Date(iso); const dias=Math.floor(diasDesdeRespaldo());
+  const cuando = dias<=0 ? 'hoy' : (dias===1 ? 'hace 1 día' : 'hace '+dias+' días');
+  const icono = respaldoVencido() ? '⚠️' : '✅';
+  return icono+' Último respaldo en este equipo: '+f.toLocaleString('es-VE')+' ('+cuando+').';
+}
+function avisarRespaldo(){
+  try{
+    const s=session(); if(!s || !esMaster(s.rol)) return;
+    if(!respaldoVencido()) return;
+    if(sessionStorage.getItem('hotel_avisoRespaldo')) return;
+    sessionStorage.setItem('hotel_avisoRespaldo','1');
+    const d=diasDesdeRespaldo();
+    const msg = (d===null)
+      ? 'Recordatorio de seguridad:\n\nTodavía no has descargado ningún respaldo de la base de datos en este equipo.\n\nVe a la pestaña "Datos" y toca "Descargar respaldo" para guardar una copia de seguridad.'
+      : 'Recordatorio de seguridad:\n\nHace '+Math.floor(d)+' días que no descargas un respaldo de la base de datos.\n\nVe a la pestaña "Datos" y toca "Descargar respaldo" para guardar una copia nueva.';
+    setTimeout(()=>{ try{ alert(msg); }catch(e){} }, 900);
+  }catch(e){}
+}
+function importarRespaldo(ev){
+  const file=ev.target.files && ev.target.files[0]; if(!file){ return; }
+  const reader=new FileReader();
+  reader.onload=function(e){
+    let paquete;
+    try{ paquete=JSON.parse(e.target.result); }catch(err){ alert('Ese archivo no es un respaldo válido (no se pudo leer).'); ev.target.value=''; return; }
+    const datos=(paquete && paquete.datos && typeof paquete.datos==='object') ? paquete.datos : ((paquete && typeof paquete==='object') ? paquete : null);
+    if(!datos){ alert('Ese archivo no parece un respaldo de la aplicación.'); ev.target.value=''; return; }
+    const claves=Object.keys(datos).filter(k=>SYNC_KEYS.includes(k));
+    if(claves.length===0){ alert('El respaldo no contiene datos reconocidos de la aplicación.'); ev.target.value=''; return; }
+    const info=(paquete._fecha?('\n\nFecha del respaldo: '+new Date(paquete._fecha).toLocaleString('es-VE')):'')+(paquete.hotel?('\nHotel: '+paquete.hotel):'');
+    if(!confirm('Vas a RESTAURAR el respaldo. Esto REEMPLAZA los datos actuales (habitaciones, clientes, pagos, usuarios, etc.) por los del archivo, en este equipo y en la nube.'+info+'\n\n¿Continuar?')){ ev.target.value=''; return; }
+    claves.forEach(k=>{ DB.set(k, datos[k]); });
+    ev.target.value='';
+    alert('Respaldo restaurado correctamente. La aplicación se va a recargar.');
+    setTimeout(()=>{ location.reload(); }, 700);
+  };
+  reader.onerror=function(){ alert('No se pudo leer el archivo.'); ev.target.value=''; };
+  reader.readAsText(file);
 }
 
 /* ====== GESTIÓN DE HABITACIONES (admin) ====== */
@@ -1285,12 +1387,12 @@ function imprimirOcupacionTipo(){
   html+='h1{font-size:20px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 18px}';
   html+='table{width:100%;border-collapse:collapse;margin-bottom:18px;font-size:13px}';
   html+='th,td{border:1px solid #ccd;padding:7px 9px;text-align:left}th{background:#eef3fa;color:#44526a}';
-  html+='.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}@media print{body{padding:0}}</style></head><body>';
-  html+=(hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>Ocupación por tipo de habitación</h1>'+hotelLinePrint()+'<div class="sub">Generado: '+new Date().toLocaleString('es-VE')+'</div>';
+  html+='.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
+  html+=(hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>'+esc(tituloDoc('ocupacion','Ocupación por tipo de habitación'))+'</h1>'+hotelLinePrint()+'<div class="sub">Generado: '+new Date().toLocaleString('es-VE')+'</div>';
   html+='<table><tr><th>Tipo</th><th class="r">Precio base</th><th class="c">Total</th><th class="c">Ocupadas</th><th class="c">Libres</th><th class="c">No disponibles</th><th class="c">% Ocupación</th></tr>'+filas;
   html+='<tr class="tot"><td>TOTAL</td><td class="r">—</td><td class="c">'+D.tot.total+'</td><td class="c">'+D.tot.ocupadas+'</td><td class="c">'+D.tot.libres+'</td><td class="c">'+D.tot.otras+'</td><td class="c">'+D.tot.pct+'%</td></tr></table>';
   html+='<p style="font-size:12px;color:#667">"No disponibles" incluye habitaciones por limpiar, en limpieza o en mantenimiento.</p>';
-  html+='</body></html>';
+  html+=piePaginaHTML()+'</body></html>';
   const w=window.open('','_blank');
   if(!w){ alert('Permite las ventanas emergentes para poder imprimir.'); return; }
   w.document.write(html); w.document.close(); w.focus();
@@ -1430,20 +1532,54 @@ function aplicarBulkEstado(){
   cerrarModal(); render();
   if(ocupadas.length) setTimeout(function(){ alert('Listo. '+ocupadas.length+' habitación(es) ocupada(s) no se cambiaron.'); }, 100);
 }
+function imprimirListadoHabitaciones(){
+  const lista=rooms().filter(r=>!habFiltroTipo || r.tipo===habFiltroTipo)
+    .slice().sort((a,b)=>(a.piso-b.piso)||(a.num-b.num));
+  if(!lista.length){ alert('No hay habitaciones para imprimir.'); return; }
+  const _c=impConfig();
+  const resumen={total:lista.length,libre:0,ocupada:0,sucia:0,mantenimiento:0,otras:0};
+  let filas='';
+  lista.forEach(r=>{
+    if(resumen[r.estado]!==undefined) resumen[r.estado]++; else resumen.otras++;
+    let f='<td class="c">'+r.num+'</td>';
+    if(_c.colPiso) f+='<td class="c">'+r.piso+'</td>';
+    if(_c.colTipo) f+='<td>'+esc(r.tipo||'')+'</td>';
+    if(_c.colTarifa) f+='<td class="r">'+fmtUSD(r.tarifa)+'</td>';
+    if(_c.colEstado) f+='<td>'+ESTADOS[r.estado].t+'</td>';
+    filas+='<tr>'+f+'</tr>';
+  });
+  const titFiltro = habFiltroTipo ? (' — tipo: '+esc(habFiltroTipo)) : '';
+  let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Listado de habitaciones</title>';
+  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}';
+  html+='h1{font-size:20px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 14px}';
+  html+='.res{font-size:12.5px;color:#44526a;margin:0 0 16px}.res b{color:#0d3b66}';
+  html+='table{width:100%;border-collapse:collapse;margin-bottom:18px;font-size:13px}';
+  html+='th,td{border:1px solid #ccd;padding:7px 9px;text-align:left}th{background:#eef3fa;color:#44526a}';
+  html+='.r{text-align:right}.c{text-align:center}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
+  html+=(hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>'+esc(tituloDoc('listado','Listado de habitaciones'))+titFiltro+'</h1>'+hotelLinePrint()+'<div class="sub">Generado: '+new Date().toLocaleString('es-VE')+'</div>';
+  html+='<div class="res">Total: <b>'+resumen.total+'</b> &nbsp;·&nbsp; Libres: <b>'+resumen.libre+'</b> &nbsp;·&nbsp; Ocupadas: <b>'+resumen.ocupada+'</b> &nbsp;·&nbsp; Por limpiar: <b>'+resumen.sucia+'</b> &nbsp;·&nbsp; Mantenimiento: <b>'+resumen.mantenimiento+'</b></div>';
+  { let _th='<th class="c">Hab.</th>'; if(_c.colPiso) _th+='<th class="c">Piso</th>'; if(_c.colTipo) _th+='<th>Tipo</th>'; if(_c.colTarifa) _th+='<th class="r">Tarifa</th>'; if(_c.colEstado) _th+='<th>Estado</th>'; html+='<table><tr>'+_th+'</tr>'+filas+'</table>'; }
+  html+=piePaginaHTML()+'</body></html>';
+  const w=window.open('','_blank');
+  if(!w){ alert('Permite las ventanas emergentes para poder imprimir.'); return; }
+  w.document.write(html); w.document.close(); w.focus();
+  setTimeout(function(){ w.print(); }, 400);
+}
 function imprimirSelHabs(){
   const sel=habsSeleccionadas().slice().sort((a,b)=>a.num-b.num);
   if(!sel.length){ alert('No hay habitaciones seleccionadas.'); return; }
+  const _c=impConfig();
   let filas='';
-  sel.forEach(r=>{ filas+='<tr><td class="c">'+r.num+'</td><td class="c">'+r.piso+'</td><td>'+esc(r.tipo||'')+'</td><td class="r">'+fmtUSD(r.tarifa)+'</td><td>'+ESTADOS[r.estado].t+'</td></tr>'; });
+  sel.forEach(r=>{ let f='<td class="c">'+r.num+'</td>'; if(_c.colPiso) f+='<td class="c">'+r.piso+'</td>'; if(_c.colTipo) f+='<td>'+esc(r.tipo||'')+'</td>'; if(_c.colTarifa) f+='<td class="r">'+fmtUSD(r.tarifa)+'</td>'; if(_c.colEstado) f+='<td>'+ESTADOS[r.estado].t+'</td>'; filas+='<tr>'+f+'</tr>'; });
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Habitaciones seleccionadas</title>';
   html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}';
   html+='h1{font-size:20px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 18px}';
   html+='table{width:100%;border-collapse:collapse;margin-bottom:18px;font-size:13px}';
   html+='th,td{border:1px solid #ccd;padding:7px 9px;text-align:left}th{background:#eef3fa;color:#44526a}';
-  html+='.r{text-align:right}.c{text-align:center}@media print{body{padding:0}}</style></head><body>';
+  html+='.r{text-align:right}.c{text-align:center}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
   html+=(hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>Habitaciones seleccionadas ('+sel.length+')</h1>'+hotelLinePrint()+'<div class="sub">Generado: '+new Date().toLocaleString('es-VE')+'</div>';
-  html+='<table><tr><th class="c">Hab.</th><th class="c">Piso</th><th>Tipo</th><th class="r">Tarifa</th><th>Estado</th></tr>'+filas+'</table>';
-  html+='</body></html>';
+  { let _th='<th class="c">Hab.</th>'; if(_c.colPiso) _th+='<th class="c">Piso</th>'; if(_c.colTipo) _th+='<th>Tipo</th>'; if(_c.colTarifa) _th+='<th class="r">Tarifa</th>'; if(_c.colEstado) _th+='<th>Estado</th>'; html+='<table><tr>'+_th+'</tr>'+filas+'</table>'; }
+  html+=piePaginaHTML()+'</body></html>';
   const w=window.open('','_blank');
   if(!w){ alert('Permite las ventanas emergentes para poder imprimir.'); return; }
   w.document.write(html); w.document.close(); w.focus();
@@ -1699,16 +1835,16 @@ function imprimirArqueo(){
   html += '.cards{display:flex;gap:12px;margin-bottom:18px}.card{flex:1;border:1px solid #ccd;border-radius:8px;padding:12px}';
   html += '.card .l{font-size:11px;color:#778;text-transform:uppercase}.card .n{font-size:18px;font-weight:800;color:#0d3b66}';
   html += '.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}';
-  html += 'h2{font-size:14px;color:#0d3b66;margin:16px 0 8px}@media print{body{padding:0}}</style></head><body>';
-  html += (hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>Arqueo de Caja Diario</h1>'+hotelLinePrint()+'<div class="sub">'+fechaLarga(cajaFecha)+' &nbsp;·&nbsp; Generado: '+new Date().toLocaleString('es-VE')+' &nbsp;·&nbsp; Tasa: '+fmtBs(tasa())+' / $1</div>';
+  html += 'h2{font-size:14px;color:#0d3b66;margin:16px 0 8px}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
+  html += (hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>'+esc(tituloDoc('arqueo','Arqueo de Caja Diario'))+'</h1>'+hotelLinePrint()+'<div class="sub">'+fechaLarga(cajaFecha)+' &nbsp;·&nbsp; Generado: '+new Date().toLocaleString('es-VE')+' &nbsp;·&nbsp; Tasa: '+fmtBs(tasa())+' / $1</div>';
   html += '<div class="cards"><div class="card"><div class="l">Total del día (Bs)</div><div class="n">'+fmtBs(R.totBs)+'</div></div>';
   html += '<div class="card"><div class="l">Equivalente USD</div><div class="n">'+fmtUSD(R.totUsd)+'</div></div>';
   html += '<div class="card"><div class="l">Transacciones</div><div class="n">'+R.pagos.length+'</div></div></div>';
   html += '<h2>Desglose por forma de pago</h2><table><tr><th>Forma de pago</th><th class="c">N°</th><th class="r">Total Bs</th><th class="r">Total USD</th></tr>'+filasM;
   html += '<tr class="tot"><td>TOTAL</td><td class="c">'+R.pagos.length+'</td><td class="r">'+fmtBs(R.totBs)+'</td><td class="r">'+fmtUSD(R.totUsd)+'</td></tr></table>';
   html += '<h2>Detalle de movimientos</h2><table><tr><th>Control</th><th>Ubicación</th><th>Huésped / Concepto</th><th>Método</th><th>Fecha y hora</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasMov+'</table>';
-  html += '<div class="firmas"><div class="firma">Entregado por<br>(Recepción)</div><div class="firma">Recibido por<br>(Administración)</div></div>';
-  html += '</body></html>';
+  if(impConfig().mostrarFirmas) html += '<div class="firmas"><div class="firma">Entregado por<br>(Recepción)</div><div class="firma">Recibido por<br>(Administración)</div></div>';
+  html += piePaginaHTML()+'</body></html>';
   const w = window.open('','_blank');
   if(!w){ alert('Permite las ventanas emergentes para poder imprimir.'); return; }
   w.document.write(html); w.document.close(); w.focus();
@@ -1794,16 +1930,16 @@ function imprimirReportePagos(){
   html += '.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}';
   html += '.cards{display:flex;gap:12px;margin-bottom:18px}.card{flex:1;border:1px solid #ccd;border-radius:8px;padding:12px}';
   html += '.card .l{font-size:11px;color:#778;text-transform:uppercase}.card .n{font-size:18px;font-weight:800;color:#0d3b66}';
-  html += 'h2{font-size:14px;color:#0d3b66;margin:16px 0 8px}@media print{body{padding:0}}</style></head><body>';
+  html += 'h2{font-size:14px;color:#0d3b66;margin:16px 0 8px}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
   const filtroTxt = repMetodo? (' &nbsp;·&nbsp; Forma de pago: '+esc(repMetodo)) : '';
-  html += (hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>Reporte de Pagos</h1>'+hotelLinePrint()+'<div class="sub">Del '+fechaLarga(d)+' al '+fechaLarga(hs)+filtroTxt+' &nbsp;·&nbsp; Generado: '+new Date().toLocaleString('es-VE')+' &nbsp;·&nbsp; Tasa: '+fmtBs(tasa())+' / $1</div>';
+  html += (hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>'+esc(tituloDoc('reportePagos','Reporte de Pagos'))+'</h1>'+hotelLinePrint()+'<div class="sub">Del '+fechaLarga(d)+' al '+fechaLarga(hs)+filtroTxt+' &nbsp;·&nbsp; Generado: '+new Date().toLocaleString('es-VE')+' &nbsp;·&nbsp; Tasa: '+fmtBs(tasa())+' / $1</div>';
   html += '<div class="cards"><div class="card"><div class="l">Total del periodo (Bs)</div><div class="n">'+fmtBs(R.totBs)+'</div></div>';
   html += '<div class="card"><div class="l">Equivalente USD</div><div class="n">'+fmtUSD(R.totUsd)+'</div></div>';
   html += '<div class="card"><div class="l">Transacciones</div><div class="n">'+pagos.length+'</div></div></div>';
   html += '<h2>Desglose por forma de pago</h2><table><tr><th>Forma de pago</th><th class="c">N°</th><th class="r">Total Bs</th><th class="r">Total USD</th></tr>'+filasM;
   html += '<tr class="tot"><td>TOTAL</td><td class="c">'+pagos.length+'</td><td class="r">'+fmtBs(R.totBs)+'</td><td class="r">'+fmtUSD(R.totUsd)+'</td></tr></table>';
   html += '<h2>Detalle de movimientos</h2><table><tr><th>Control</th><th>Fecha y hora</th><th>Ubicación</th><th>Huésped / Concepto</th><th>Método</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasMov+'</table>';
-  html += '</body></html>';
+  html += piePaginaHTML()+'</body></html>';
   const w = window.open('','_blank');
   if(!w){ alert('Permite las ventanas emergentes para poder imprimir.'); return; }
   w.document.write(html); w.document.close(); w.focus();
@@ -1907,17 +2043,17 @@ function imprimirFichaHuesped(id){
   hist.forEach(e=>{ const enCurso=e.estado==='activa'; const esCargo=e.estado==='cargo'; filas+='<tr><td>'+fmtFecha(e.entrada)+'</td><td>'+(enCurso?'En curso':fmtFecha(e.salida))+'</td><td>'+(esCargo?('Caja'+(e.concepto?(' · '+esc(e.concepto)):'')):(e.hab||'—'))+'</td><td class="c">'+(e.noches||'—')+'</td><td class="r">'+(e.montoUsd?fmtUSD(e.montoUsd):'—')+'</td><td>'+esc(e.metodo||'—')+'</td></tr>'; });
   if(!filas) filas='<tr><td colspan="6" class="c" style="color:#888;padding:16px">Aún no tiene estadías registradas</td></tr>';
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Ficha de huésped</title>';
-  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430;max-width:680px}h1{font-size:19px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 18px}h2{font-size:14px;color:#0d3b66;margin:18px 0 8px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:10px}th,td{border:1px solid #ccd;padding:7px 9px;text-align:left}th{background:#eef3fa;color:#44526a}td:first-child{color:#55637a}.datos td:first-child{width:38%}.c{text-align:center}.r{text-align:right}.tot td{font-weight:800;background:#f3f6fb}@media print{body{padding:0}}</style></head><body>';
+  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430;max-width:680px}h1{font-size:19px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 18px}h2{font-size:14px;color:#0d3b66;margin:18px 0 8px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:10px}th,td{border:1px solid #ccd;padding:7px 9px;text-align:left}th{background:#eef3fa;color:#44526a}td:first-child{color:#55637a}.datos td:first-child{width:38%}.c{text-align:center}.r{text-align:right}.tot td{font-weight:800;background:#f3f6fb}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
   const _hl=hotel(); const _lsz=Math.max(40,(parseInt(_hl.logoSize)||52)+6); const _lwv=parseInt(_hl.logoWidth)||0; const _lw=_lwv>0?(_lwv+'px'):'auto';
-  const _logo=_hl.logo?('<img src="'+_hl.logo+'" alt="logo" style="height:'+_lsz+'px;width:'+_lw+';max-width:280px;object-fit:contain;border-radius:10px;flex:0 0 auto">'):'';
-  html+='<div style="display:flex;align-items:center;gap:14px">'+_logo+'<div><h1>'+esc(hotelNombre())+' · Ficha de huésped</h1>'+hotelLinePrint()+'</div></div>';
+  const _logo=(_hl.logo && impConfig().mostrarLogo)?('<img src="'+_hl.logo+'" alt="logo" style="height:'+_lsz+'px;width:'+_lw+';max-width:280px;object-fit:contain;border-radius:10px;flex:0 0 auto">'):'';
+  html+='<div style="display:flex;align-items:center;gap:14px">'+_logo+'<div><h1>'+esc(hotelNombre())+' · '+esc(tituloDoc('ficha','Ficha de huésped'))+'</h1>'+hotelLinePrint()+'</div></div>';
   html+='<div class="sub">'+esc(nom)+' · Generado: '+new Date().toLocaleString('es-VE')+'</div>';
   html+='<h2>Datos del huésped</h2><table class="datos">'+datos+'</table>';
   html+='<h2>Historial de estadías ('+hist.length+')</h2>';
   html+='<table><tr><th>Entrada</th><th>Salida</th><th>Hab.</th><th class="c">Noches</th><th class="r">Monto</th><th>Pago</th></tr>'+filas;
   html+='<tr class="tot"><td colspan="3">TOTALES</td><td class="c">'+r.noches+'</td><td class="r">'+fmtUSD(r.totUsd)+'</td><td>'+r.completas+' completada(s)</td></tr></table>';
   html+='<h2>Observaciones</h2><div style="border:1px solid #ccd;border-radius:6px;min-height:110px;padding:10px 12px;background:repeating-linear-gradient(transparent,transparent 27px,#e3e8f0 28px)">'+esc(c.notas||'')+'</div>';
-  html+='</body></html>';
+  html+=piePaginaHTML()+'</body></html>';
   const w=window.open('','_blank'); if(!w){alert('Permite las ventanas emergentes para poder imprimir.');return;}
   w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){w.print();},400);
 }
@@ -1997,14 +2133,14 @@ function imprimirResumenHuespedes(){
     filas+='<tr><td>'+esc(nom)+(c.tipo==='empresa'?' (Empresa)':'')+'</td><td>'+esc(doc)+'</td><td>'+esc(c.correo||'—')+'</td><td>'+esc(c.ocupacion||'—')+'</td><td>'+esc(c.ciudad||'—')+'</td><td class="c">'+est+'</td><td class="c">'+r.noches+'</td><td class="r">'+fmtUSD(r.totUsd)+'</td><td>'+(r.ultima?fmtFecha(r.ultima):'—')+'</td></tr>';
   });
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Resumen de huéspedes</title>';
-  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:19px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}@media print{body{padding:0}}</style></head><body>';
+  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:19px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
   const _hl=hotel(); const _lsz=Math.max(40,(parseInt(_hl.logoSize)||52)+6); const _lwv=parseInt(_hl.logoWidth)||0; const _lw=_lwv>0?(_lwv+'px'):'auto';
-  const _logo=_hl.logo?('<img src="'+_hl.logo+'" alt="logo" style="height:'+_lsz+'px;width:'+_lw+';max-width:280px;object-fit:contain;border-radius:10px;flex:0 0 auto">'):'';
-  html+='<div style="display:flex;align-items:center;gap:14px">'+_logo+'<div><h1>'+esc(hotelNombre())+' · Resumen de huéspedes</h1>'+hotelLinePrint()+'</div></div>';
+  const _logo=(_hl.logo && impConfig().mostrarLogo)?('<img src="'+_hl.logo+'" alt="logo" style="height:'+_lsz+'px;width:'+_lw+';max-width:280px;object-fit:contain;border-radius:10px;flex:0 0 auto">'):'';
+  html+='<div style="display:flex;align-items:center;gap:14px">'+_logo+'<div><h1>'+esc(hotelNombre())+' · '+esc(tituloDoc('resumen','Resumen de huéspedes'))+'</h1>'+hotelLinePrint()+'</div></div>';
   html+='<div class="sub">'+list.length+' huésped(es) registrado(s) · Generado: '+new Date().toLocaleString('es-VE')+'</div>';
   html+='<table><tr><th>Nombre</th><th>Documento</th><th>Correo</th><th>Ocupación</th><th>Ciudad</th><th class="c">Estadías</th><th class="c">Noches</th><th class="r">Total hospedado</th><th>Última visita</th></tr>'+filas;
   html+='<tr class="tot"><td colspan="5">TOTALES</td><td class="c">'+totEst+'</td><td class="c">'+totNoches+'</td><td class="r">'+fmtUSD(totUsd)+'</td><td></td></tr></table>';
-  html+='</body></html>';
+  html+=piePaginaHTML()+'</body></html>';
   const w=window.open('','_blank'); if(!w){alert('Permite las ventanas emergentes para poder imprimir.');return;}
   w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){w.print();},400);
 }
@@ -2172,12 +2308,13 @@ function imprimirKardex(turnoId){
   let filas=''; movs.forEach(m=>{ const k=KTIPO[m.tipo]||{t:m.tipo}; filas+='<tr><td>'+horaCorta(m.ts)+'</td><td>'+k.t+'</td><td>'+(m.hab||'—')+'</td><td>'+esc(m.huesped||'—')+'</td><td>'+esc((m.detalle||'')+(m.metodo?(' · '+m.metodo):''))+'</td><td class="r">'+(Number(m.montoBs||0)>0?fmtBs(m.montoBs):'—')+'</td><td class="r">'+(Number(m.montoUsd||0)>0?fmtUSD(m.montoUsd):'—')+'</td></tr>'; });
   if(!filas) filas='<tr><td colspan="7" class="c" style="color:#888;padding:18px">Sin movimientos</td></tr>';
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Kardex turno</title>';
-  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:19px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:14px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}@media print{body{padding:0}}</style></head><body>';
-  html+='<h1>'+esc(hotelNombre())+' · Kardex de Recepción</h1>'+hotelLinePrint();
+  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:19px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:14px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
+  html+='<h1>'+esc(hotelNombre())+' · '+esc(tituloDoc('kardex','Kardex de Recepción'))+'</h1>'+hotelLinePrint();
   html+='<div class="sub">Turno de <b>'+esc(t?t.nombre:'')+'</b> · '+(t?fechaHoraCorta(t.inicio):'')+(t&&t.fin?(' a '+fechaHoraCorta(t.fin)):' (abierto)')+' · Duración: '+(t?duracionTurno(t):'')+' · Generado: '+new Date().toLocaleString('es-VE')+'</div>';
   html+='<table><tr><th>Hora</th><th>Tipo</th><th>Hab.</th><th>Cliente / Huésped</th><th>Detalle</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filas;
   html+='<tr class="tot"><td colspan="5">TOTAL COBRADO EN EL TURNO</td><td class="r">'+fmtBs(cobrBs)+'</td><td class="r">'+fmtUSD(cobrUsd)+'</td></tr></table>';
-  html+='<div class="firmas"><div class="firma">Entregado por<br>(Recepcionista)</div><div class="firma">Recibido por<br>(Administración)</div></div></body></html>';
+  if(impConfig().mostrarFirmas) html+='<div class="firmas"><div class="firma">Entregado por<br>(Recepcionista)</div><div class="firma">Recibido por<br>(Administración)</div></div>';
+  html+=piePaginaHTML()+'</body></html>';
   const w=window.open('','_blank'); if(!w){alert('Permite las ventanas emergentes para poder imprimir.');return;}
   w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){w.print();},400);
 }
@@ -2283,6 +2420,68 @@ function guardarProxControl(){
   if(n<min){ if(!confirm('El próximo pago ya iba a ser el '+fmtControl(min)+'. Si pones un número menor podrías repetir números de control ya usados. ¿Continuar igual?')) return; }
   DB.set('pagoControl', n-1); render();
   alert('Listo. El próximo pago usará el número '+fmtControl(n)+'.');
+}
+function impCheck(k,titulo,desc){
+  const on=!!impConfig()[k];
+  return '<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid #eef1f6;cursor:pointer">'+
+    '<input type="checkbox" '+(on?'checked':'')+' onchange="setImp(\''+k+'\',this.checked);render()" style="width:auto;margin-top:3px">'+
+    '<span><b style="font-size:14px">'+titulo+'</b>'+(desc?'<div style="font-size:12px;color:#8893a5">'+desc+'</div>':'')+'</span></label>';
+}
+function impTarjeta(titulo,subtitulo,cuerpo){
+  return '<div style="background:#fff;padding:18px;border-radius:12px;max-width:620px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:16px">'+
+    '<div style="font-weight:700;color:var(--azul);font-size:15px">'+titulo+'</div>'+
+    (subtitulo?('<div style="font-size:12px;color:#8893a5;margin:2px 0 4px">'+subtitulo+'</div>'):'')+cuerpo+'</div>';
+}
+function renderImpresion(){
+  const c=impConfig();
+  let html='<div style="background:#eef6ff;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:13px;color:#44526a;max-width:620px">Aquí decides <b>qué aparece en todo lo que se imprime</b> (recibos, listados, arqueos, reportes, fichas). Los cambios se guardan solos y se ven la próxima vez que imprimas.</div>';
+  // Encabezado
+  let enc=impCheck('mostrarLogo','Mostrar el logo del hotel','Aparece arriba en los recibos y fichas.');
+  enc+=impCheck('mostrarRif','Mostrar el RIF','Debajo del nombre del hotel.');
+  enc+=impCheck('mostrarDireccion','Mostrar la dirección','Debajo del nombre del hotel.');
+  enc+=impCheck('mostrarEslogan','Mostrar el eslogan','La frase corta del hotel, si la tienes cargada.');
+  html+=impTarjeta('Encabezado (parte de arriba)','Lo que se ve en la cabecera de cada impresión. El nombre del hotel siempre sale.',enc);
+  // Pie de página
+  let pie='<p style="font-size:12.5px;color:#8893a5;margin:0 0 6px">Texto que aparece <b>al final de todo lo que imprimas</b>. Déjalo vacío si no quieres pie de página. Puedes usar varias líneas.</p>';
+  pie+='<textarea onchange="setImp(\'piePagina\',this.value)" placeholder="ej: ¡Gracias por preferirnos!  —  Tel: 0212-0000000" style="width:100%;min-height:70px;padding:10px;border:1px solid #c7d0dd;border-radius:8px;font-family:inherit;font-size:13px;resize:vertical">'+esc(c.piePagina||'')+'</textarea>';
+  html+=impTarjeta('Pie de página (parte de abajo)','',pie);
+  // Recibo
+  let rec='<p style="font-size:12.5px;color:#8893a5;margin:0 0 6px">Nota que aparece <b>solo en el recibo de hospedaje</b> (condiciones, aviso, agradecimiento, etc.).</p>';
+  rec+='<textarea onchange="setImp(\'notaRecibo\',this.value)" placeholder="ej: El hotel no se responsabiliza por objetos de valor no declarados." style="width:100%;min-height:60px;padding:10px;border:1px solid #c7d0dd;border-radius:8px;font-family:inherit;font-size:13px;resize:vertical">'+esc(c.notaRecibo||'')+'</textarea>';
+  rec+=impCheck('mostrarFirmas','Mostrar líneas de firma','Las dos rayas para firmar al final del recibo, arqueo y kardex.');
+  html+=impTarjeta('Recibo de hospedaje','',rec);
+  // Columnas de listados
+  let col='<p style="font-size:12.5px;color:#8893a5;margin:0 0 2px">Elige qué columnas salen en el <b>listado de habitaciones</b>. La columna “Hab.” (número) siempre aparece.</p>';
+  col+=impCheck('colPiso','Columna: Piso','');
+  col+=impCheck('colTipo','Columna: Tipo','');
+  col+=impCheck('colTarifa','Columna: Tarifa','');
+  col+=impCheck('colEstado','Columna: Estado','');
+  html+=impTarjeta('Listado de habitaciones','',col);
+  // Tamaño de letra
+  const esc0=escalaImpresion();
+  const opc=[[0.9,'Pequeña'],[1,'Normal'],[1.1,'Grande'],[1.25,'Muy grande']];
+  let tl='<p style="font-size:12.5px;color:#8893a5;margin:0 0 8px">Afecta el tamaño de la letra en <b>todo lo que se imprime</b>. Útil si quieres que se vea más grande o que entre más en la hoja.</p>';
+  tl+='<select onchange="setImp(\'escalaImpresion\',parseFloat(this.value));render()" style="max-width:260px">';
+  opc.forEach(function(o){ tl+='<option value="'+o[0]+'"'+(Math.abs(esc0-o[0])<0.001?' selected':'')+'>'+o[1]+'</option>'; });
+  tl+='</select>';
+  html+=impTarjeta('Tamaño de letra','',tl);
+  // Títulos de los documentos
+  let ti='<p style="font-size:12.5px;color:#8893a5;margin:0 0 8px">Cambia el <b>nombre</b> de cada documento impreso a tu gusto (por ejemplo, poner “FACTURA” o “NOTA DE CONSUMO”). Déjalo vacío para usar el nombre por defecto.</p>';
+  ti+=tituloInput('recibo','Recibo de hospedaje','Recibo de hospedaje');
+  ti+=tituloInput('listado','Listado de habitaciones','Listado de habitaciones');
+  ti+=tituloInput('arqueo','Arqueo de caja','Arqueo de Caja Diario');
+  ti+=tituloInput('reportePagos','Reporte de pagos','Reporte de Pagos');
+  ti+=tituloInput('ocupacion','Ocupación por tipo','Ocupación por tipo de habitación');
+  ti+=tituloInput('ficha','Ficha de huésped','Ficha de huésped');
+  ti+=tituloInput('resumen','Resumen de huéspedes','Resumen de huéspedes');
+  ti+=tituloInput('kardex','Kardex de recepción','Kardex de Recepción');
+  html+=impTarjeta('Títulos de los documentos','',ti);
+  return html;
+}
+function tituloInput(k,label,def){
+  const t=impConfig().titulos||{}; const val=(t[k]!==undefined?t[k]:'');
+  return '<div class="field" style="margin-bottom:10px"><label style="font-size:13px">'+label+'</label>'+
+    '<input value="'+escA(val)+'" placeholder="'+escA(def)+'" onchange="setTitulo(\''+k+'\',this.value)"></div>';
 }
 function renderIdentidad(){
   const h = hotel();
