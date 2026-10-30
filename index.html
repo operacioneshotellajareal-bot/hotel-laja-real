@@ -533,14 +533,17 @@ function renderRecepcion(){
   const _perm = permisosDe(_rol);
   const verReporte = esConfig ? _perm.verReportePagos : true;
   const verGestionHab = esConfig ? _perm.gestionHab : false;
+  const verOcup = puede('verOcupacionTipo');
   if(esConfig){ // evitar quedar en una pestaña sin permiso
     if(recepView==='reportes' && !verReporte) recepView='mapa';
     if(recepView==='habitaciones' && !verGestionHab) recepView='mapa';
   }
+  if(recepView==='ocupacion' && !verOcup) recepView='mapa';
   let tabs = recepTab('mapa','Mapa de habitaciones')+recepTab('reservas','Reservas')+recepTab('caja','Caja / Arqueo');
   if(verReporte) tabs += recepTab('reportes','Reporte de pagos');
   tabs += recepTab('clientes','Clientes')+recepTab('kardex','Kardex / Turno');
   if(verGestionHab) tabs += recepTab('habitaciones','Habitaciones');
+  if(verOcup) tabs += recepTab('ocupacion','Ocupación');
   html += '<div class="tabs">'+tabs+'</div>';
   if(!turnoActivo()){
     html += '<div style="background:#fff8e1;border:1px solid #f0d58a;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:220px;font-size:13.5px;color:#7a5b00">⚠️ <b>No hay ningún turno abierto.</b> Abre tu turno al empezar para que cada cobro y movimiento quede a tu nombre.</div><button class="btn-green" onclick="abrirTurno()">Abrir mi turno</button></div>';
@@ -555,13 +558,13 @@ function renderRecepcion(){
   if(recepView==='caja'){ c.innerHTML = html + renderCaja(); return; }
   if(recepView==='reservas'){ c.innerHTML = html + renderReservas(); return; }
   if(recepView==='reportes'){ c.innerHTML = html + renderReportePagos(); return; }
-  if(recepView==='habitaciones'){ c.innerHTML = html + renderGestionHab() + renderOcupacionTipo(); return; }
+  if(recepView==='habitaciones'){ c.innerHTML = html + renderGestionHab(); return; }
+  if(recepView==='ocupacion'){ c.innerHTML = html + renderOcupacionTipo(); return; }
   if(recepView==='clientes'){ c.innerHTML = html + renderClientes(); return; }
   if(recepView==='kardex'){ c.innerHTML = html + renderKardex(); return; }
   html += statsBar();
   html += avisoLlegadasPendientes();
   if(puede('verResumenOcupacion')) html += statsNegocio(true);
-  if(puede('verOcupacionTipo')) html += renderOcupacionTipo();
   html += legend();
   html += '<div style="display:flex;justify-content:flex-end;margin:0 0 4px"><button class="btn-gray" style="padding:6px 12px" onclick="imprimirListadoHabitaciones()">🖨️ Imprimir listado de habitaciones</button></div>';
   html += filtroTipoBar();
@@ -3064,7 +3067,7 @@ function imprimirKardex(turnoId){
 }
 
 /* ====== IDENTIDAD DEL HOTEL + PALETAS DE COLOR ====== */
-function hotel(){ return DB.get('hotel', {nombre:'',rif:'',direccion:'',eslogan:'',whatsapp:'',correo:'',plantillaBienvenida:'',plantillaReserva:'',logo:'',logoSize:52,logoWidth:0,palette:'azul'}); }
+function hotel(){ return DB.get('hotel', {nombre:'',rif:'',direccion:'',eslogan:'',whatsapp:'',correo:'',plantillaBienvenida:'',plantillaReserva:'',logo:'',logoSize:52,logoWidth:0,palette:'azul',custom:{azul:'#0d3b66',azul2:'#1b6ca8'}}); }
 function saveHotel(h){ DB.set('hotel', h); }
 const PALETAS = {
   azul:    {nombre:'Azul clásico',    azul:'#0d3b66', azul2:'#1b6ca8', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'},
@@ -3072,10 +3075,20 @@ const PALETAS = {
   vino:    {nombre:'Vino / Borgoña',  azul:'#5c1a2b', azul2:'#9e2a4b', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'},
   morado:  {nombre:'Morado elegante', azul:'#3d2c63', azul2:'#6a4c93', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'},
   grafito: {nombre:'Grafito / Oro',   azul:'#222831', azul2:'#4b5563', verde:'#2e9e5b', rojo:'#d64045', naranja:'#c9922b', gris:'#7a8699'},
-  tropical:{nombre:'Tropical',        azul:'#065a82', azul2:'#1c7293', verde:'#1fa36b', rojo:'#e5574e', naranja:'#f3961c', gris:'#6f8591'}
+  tropical:{nombre:'Tropical',        azul:'#065a82', azul2:'#1c7293', verde:'#1fa36b', rojo:'#e5574e', naranja:'#f3961c', gris:'#6f8591'},
+  oceano:  {nombre:'Océano',          azul:'#0b3d5c', azul2:'#2e86c1', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'},
+  esmeralda:{nombre:'Esmeralda',       azul:'#064e3b', azul2:'#0f9d75', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'},
+  cafe:    {nombre:'Café / Cobre',    azul:'#4a342a', azul2:'#8a5a44', verde:'#2e9e5b', rojo:'#d64045', naranja:'#c9922b', gris:'#7a8699'},
+  atardecer:{nombre:'Atardecer',       azul:'#7c2d12', azul2:'#ea7317', verde:'#2e9e5b', rojo:'#d64045', naranja:'#f59e0b', gris:'#7a8699'},
+  noche:   {nombre:'Azul noche',       azul:'#101827', azul2:'#2f4b7c', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'}
 };
 function aplicarTema(){
-  const p = PALETAS[hotel().palette] || PALETAS.azul;
+  const h = hotel();
+  let p = PALETAS[h.palette] || PALETAS.azul;
+  if(h.palette==='personalizado'){
+    const c = h.custom || {};
+    p = Object.assign({}, PALETAS.azul, {azul:(c.azul||'#0d3b66'), azul2:(c.azul2||'#1b6ca8')});
+  }
   const root = document.documentElement.style;
   root.setProperty('--azul',p.azul); root.setProperty('--azul2',p.azul2);
   root.setProperty('--verde',p.verde); root.setProperty('--rojo',p.rojo);
@@ -3113,6 +3126,12 @@ function leerHotelForm(){
 }
 function guardarHotel(){ const h=leerHotelForm(); saveHotel(h); aplicarTema(); pintarMarca(); render(); alert('Datos del hotel guardados.'); }
 function elegirPaleta(k){ const h=leerHotelForm(); h.palette=k; saveHotel(h); aplicarTema(); pintarMarca(); render(); }
+function aplicarColorPersonalizado(){
+  const a=document.getElementById('col-principal'); const b=document.getElementById('col-secundario');
+  if(!a||!b) return;
+  const h=leerHotelForm(); h.palette='personalizado'; h.custom={azul:a.value, azul2:b.value};
+  saveHotel(h); aplicarTema(); pintarMarca(); render();
+}
 function cargarLogo(ev){
   const f = ev.target.files && ev.target.files[0]; if(!f) return;
   if(!/^image\//.test(f.type)){ alert('Elige un archivo de imagen (PNG o JPG).'); return; }
@@ -3264,7 +3283,18 @@ function renderIdentidad(){
     [p.azul,p.azul2,p.verde,p.naranja,p.rojo].forEach(col=>{ html+='<div style="flex:1;height:22px;border-radius:4px;background:'+col+'"></div>'; });
     html+='</div><div style="font-size:12.5px;font-weight:600;color:#44526a">'+p.nombre+(sel?' ✓':'')+'</div></div>';
   });
-  html+='</div><p style="font-size:12px;color:#8893a5;margin-top:12px">Al tocar una paleta, los colores de toda la aplicación cambian al instante.</p></div>';
+  html+='</div><p style="font-size:12px;color:#8893a5;margin-top:12px">Al tocar una paleta, los colores de toda la aplicación cambian al instante.</p>';
+  const cst = h.custom || {azul:'#0d3b66',azul2:'#1b6ca8'};
+  const selPers = (h.palette==='personalizado');
+  html+='<div style="margin-top:14px;border-top:1px solid #eef1f6;padding-top:14px">';
+  html+='<div style="font-size:13.5px;font-weight:700;color:#44526a;margin-bottom:4px">✨ O crea tu color personalizado'+(selPers?' <span style="color:#2e9e5b">✓ activo</span>':'')+'</div>';
+  html+='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">';
+  html+='<div style="text-align:center"><label style="font-size:12.5px;display:block;margin-bottom:4px">Color principal</label><input type="color" id="col-principal" value="'+(cst.azul||'#0d3b66')+'" style="width:64px;height:44px;padding:2px;border:1px solid #c7d0dd;border-radius:10px;cursor:pointer;background:#fff"></div>';
+  html+='<div style="text-align:center"><label style="font-size:12.5px;display:block;margin-bottom:4px">Color secundario</label><input type="color" id="col-secundario" value="'+(cst.azul2||'#1b6ca8')+'" style="width:64px;height:44px;padding:2px;border:1px solid #c7d0dd;border-radius:10px;cursor:pointer;background:#fff"></div>';
+  html+='<button class="btn-primary" style="padding:10px 18px" onclick="aplicarColorPersonalizado()">Aplicar mis colores</button>';
+  html+='</div>';
+  html+='<p style="font-size:12px;color:#8893a5;margin-top:10px;line-height:1.6">El <b>color principal</b> es el fuerte (barra de arriba y títulos) y el <b>secundario</b> es el de los botones. Los colores de “cobrar/disponible” (verde) y de “alerta” (rojo) se mantienen siempre para que todos los entiendan igual.</p>';
+  html+='</div></div>';
   if(esMaster(session().rol)){
     html+='<div style="background:#fff;padding:20px;border-radius:12px;max-width:620px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-top:20px">';
     html+='<div class="section-title" style="font-size:15px;margin-top:0">Formas de pago</div>';
