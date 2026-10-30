@@ -620,6 +620,72 @@ function legend(){
           .replace(/<i class="e-mantenimiento"[^>]*>/,'<i style="background:var(--gris)"></i>');
 }
 
+/* ====== ENVIAR MENSAJES (WhatsApp / correo) ====== */
+function waNum(tel){
+  var d=String(tel||'').replace(/[^0-9]/g,'');
+  if(!d) return '';
+  if(d.slice(0,2)==='58') return d;
+  if(d.charAt(0)==='0') return '58'+d.slice(1);
+  if(d.length===10) return '58'+d;
+  return d;
+}
+function abrirWa(tel, msg){
+  var n=waNum(tel);
+  if(!n){ alert('No hay un número de WhatsApp válido. Escríbelo e inténtalo de nuevo.'); return; }
+  window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg||''), '_blank');
+}
+function abrirMail(correo, asunto, cuerpo){
+  correo=String(correo||'').trim();
+  if(!correo || correo.indexOf('@')<1){ alert('No hay un correo válido. Escríbelo e inténtalo de nuevo.'); return; }
+  window.location.href='mailto:'+correo+'?subject='+encodeURIComponent(asunto||'')+'&body='+encodeURIComponent(cuerpo||'');
+}
+function nombreHotelMsg(){ var n=(hotel().nombre||'').trim(); return n||'nuestro hotel'; }
+function firmaHotelMsg(){
+  var h=hotel(); var bits=[];
+  if((h.whatsapp||'').trim()) bits.push('WhatsApp: '+String(h.whatsapp).trim());
+  if((h.correo||'').trim()) bits.push('Correo: '+String(h.correo).trim());
+  return bits.length?('\n\n— '+nombreHotelMsg()+'\n'+bits.join(' · ')):'';
+}
+function soloNombre(nombre){ return String(nombre||'').trim().split(/\s+/)[0]||''; }
+function plantillaBienvenidaDefault(){ return '¡Hola [nombre]! 🏨 Bienvenido(a) a [hotel]. Tu habitación [habitacion] ya está lista. Te deseamos una estadía excelente. Cualquier cosa que necesites, estamos a la orden. 😊'; }
+function plantillaReservaDefault(){ return '¡Hola [nombre]! 🏨 Tu reserva en [hotel] quedó confirmada. Tu número localizador es [localizador]. Entrada: [entrada] · Salida: [salida]. Presenta este código al llegar. ¡Te esperamos! 😊'; }
+function aplicarPlantilla(tpl, vars){
+  var s=String(tpl||'');
+  Object.keys(vars).forEach(function(k){ s=s.split('['+k+']').join(vars[k]==null?'':String(vars[k])); });
+  return s;
+}
+function msgBienvenida(nombre, habNum){
+  var tpl=(hotel().plantillaBienvenida||'').trim()||plantillaBienvenidaDefault();
+  return aplicarPlantilla(tpl, {nombre:soloNombre(nombre), habitacion:(habNum||''), hotel:nombreHotelMsg()})+firmaHotelMsg();
+}
+function msgReservaTxt(r){
+  var tpl=(hotel().plantillaReserva||'').trim()||plantillaReservaDefault();
+  return aplicarPlantilla(tpl, {nombre:soloNombre(r.nombre), localizador:r.loc, entrada:fmtFechaCorta(r.fechaEntrada), salida:fmtFechaCorta(r.fechaSalida), hotel:nombreHotelMsg()})+firmaHotelMsg();
+}
+function modalEnvio(opts){
+  opts=opts||{};
+  window._envioMsg=opts.mensaje||''; window._envioAsunto=opts.asunto||'';
+  var b='<button class="close" onclick="cerrarModal()">×</button>';
+  b+='<h2>'+esc(opts.titulo||'Enviar mensaje')+'</h2>';
+  if(opts.sub) b+='<p style="color:#55637a;font-size:13.5px;line-height:1.5;margin:0 0 14px">'+opts.sub+'</p>';
+  b+='<div style="background:#f3f6fb;border-radius:10px;padding:12px 14px;font-size:13px;color:#55637a;white-space:pre-wrap;margin-bottom:14px">'+esc(opts.mensaje||'')+'</div>';
+  b+='<label class="lbl">📱 WhatsApp del huésped</label>';
+  b+='<input id="env-tel" class="inp" value="'+escA(opts.tel||'')+'" placeholder="Ej: 0412-1234567">';
+  b+='<button class="btn-green" style="width:100%;margin:8px 0 4px" onclick="enviarWa()">📲 Enviar por WhatsApp</button>';
+  b+='<div style="height:12px"></div>';
+  b+='<label class="lbl">✉️ Correo del huésped (opcional)</label>';
+  b+='<input id="env-correo" class="inp" value="'+escA(opts.correo||'')+'" placeholder="correo@ejemplo.com">';
+  b+='<button class="btn-primary" style="width:100%;margin:8px 0 4px" onclick="enviarMail()">✉️ Enviar por correo</button>';
+  b+='<button class="btn-gray" style="width:100%;margin-top:10px" onclick="cerrarModal()">Cerrar</button>';
+  showModal(b);
+}
+function enviarWa(){ var t=document.getElementById('env-tel'); abrirWa(t?t.value:'', window._envioMsg||''); }
+function enviarMail(){ var c=document.getElementById('env-correo'); abrirMail(c?c.value:'', window._envioAsunto||'', window._envioMsg||''); }
+function enviarLocalizador(loc){
+  var r=reservas().find(function(x){return x.loc===loc;}); if(!r){ alert('No se encontró la reserva.'); return; }
+  modalEnvio({ titulo:'Enviar localizador '+r.loc, sub:'Envíale el número de reserva al huésped:', tel:r.telefono, correo:r.correo, asunto:'Tu reserva en '+nombreHotelMsg()+' · '+r.loc, mensaje:msgReservaTxt(r) });
+}
+
 /* ====== RESERVAS (localizador) ====== */
 let resBuscar='';
 function reservas(){ return DB.get('reservas', []); }
@@ -702,6 +768,7 @@ function reservaRows(q){
     h+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
     if(r.estado==='pendiente'){
       h+='<button class="btn-green" style="padding:8px 14px" onclick="checkinReservaModal(\''+r.loc+'\')">✅ Hacer check-in</button>';
+      h+='<button class="btn-gray" style="padding:8px 14px" onclick="enviarLocalizador(\''+r.loc+'\')">📲 Enviar localizador</button>';
       h+='<button class="btn-gray" style="padding:8px 14px" onclick="nuevaReservaModal(\''+r.loc+'\')">✏️ Editar</button>';
       h+='<button class="btn-gray" style="padding:8px 14px" onclick="cancelarReserva(\''+r.loc+'\')">❌ Cancelar</button>';
     } else {
@@ -807,7 +874,8 @@ function guardarReserva(loc){
     const nuevaLoc=nuevoLocalizador();
     list.push(Object.assign({loc:nuevaLoc, estado:'pendiente', hab:'', creado:new Date().toISOString()}, datos));
     saveReservas(list); cerrarModal(); render();
-    alert('✅ Reserva creada.\n\nNúmero localizador: '+nuevaLoc+'\n\nDa este número al huésped. Al llegar, busçalo en Reservas y haz el check-in en un clic.');
+    const _rc=reservas().find(x=>x.loc===nuevaLoc)||Object.assign({loc:nuevaLoc}, datos);
+    modalEnvio({ titulo:'✅ Reserva creada', sub:'Número localizador: <b style="font-family:monospace;font-size:16px;color:var(--azul)">'+esc(nuevaLoc)+'</b><br>Puedes enviarlo al huésped ahora mismo:', tel:datos.telefono, correo:datos.correo, asunto:'Tu reserva en '+nombreHotelMsg()+' · '+nuevaLoc, mensaje:msgReservaTxt(_rc) });
   }
 }
 function habitacionesLibres(){ return rooms().filter(r=>r.estado==='libre'); }
@@ -863,7 +931,7 @@ function confirmarCheckinReserva(loc){
   r.estado='ingresada'; r.hab=num; r.ingresadoEn=new Date().toISOString();
   saveReservas(list);
   cerrarModal(); render();
-  alert('✅ Check-in listo. '+esc(nom)+' quedó en la habitación '+num+'.');
+  modalEnvio({ titulo:'✅ Check-in listo', sub:'<b>'+esc(nom)+'</b> quedó en la habitación '+num+'. Puedes enviarle un mensaje de bienvenida:', tel:r.telefono, correo:r.correo, asunto:'Bienvenido(a) a '+nombreHotelMsg(), mensaje:msgBienvenida(nom, num) });
 }
 function cancelarReserva(loc){
   if(!confirm('¿Cancelar la reserva '+loc+'? Quedará marcada como cancelada pero no se borra.')) return;
@@ -1100,6 +1168,8 @@ function checkin(num){
     });
   }
   cerrarModal(); render();
+  var _cl=(clienteId?clientes().find(x=>x.id===clienteId):null)||{};
+  modalEnvio({ titulo:'✅ Check-in listo', sub:'<b>'+esc(h)+'</b> quedó en la habitación '+num+'. Puedes enviarle un mensaje de bienvenida:', tel:_cl.telefono||'', correo:_cl.correo||'', asunto:'Bienvenido(a) a '+nombreHotelMsg(), mensaje:msgBienvenida(h, num) });
 }
 function forzarLibre(num){ updateRoom(num,{estado:'libre',nota:''}); cerrarModal(); render(); }
 
@@ -2955,7 +3025,7 @@ function imprimirKardex(turnoId){
 }
 
 /* ====== IDENTIDAD DEL HOTEL + PALETAS DE COLOR ====== */
-function hotel(){ return DB.get('hotel', {nombre:'',rif:'',direccion:'',eslogan:'',logo:'',logoSize:52,logoWidth:0,palette:'azul'}); }
+function hotel(){ return DB.get('hotel', {nombre:'',rif:'',direccion:'',eslogan:'',whatsapp:'',correo:'',plantillaBienvenida:'',plantillaReserva:'',logo:'',logoSize:52,logoWidth:0,palette:'azul'}); }
 function saveHotel(h){ DB.set('hotel', h); }
 const PALETAS = {
   azul:    {nombre:'Azul clásico',    azul:'#0d3b66', azul2:'#1b6ca8', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'},
@@ -2996,6 +3066,10 @@ function leerHotelForm(){
   v=g('h-rif'); if(v!==undefined) h.rif=v;
   v=g('h-dir'); if(v!==undefined) h.direccion=v;
   v=g('h-eslogan'); if(v!==undefined) h.eslogan=v;
+  v=g('h-whatsapp'); if(v!==undefined) h.whatsapp=v;
+  v=g('h-correo'); if(v!==undefined) h.correo=v;
+  v=g('h-tpl-bienvenida'); if(v!==undefined) h.plantillaBienvenida=v;
+  v=g('h-tpl-reserva'); if(v!==undefined) h.plantillaReserva=v;
   return h;
 }
 function guardarHotel(){ const h=leerHotelForm(); saveHotel(h); aplicarTema(); pintarMarca(); render(); alert('Datos del hotel guardados.'); }
@@ -3126,6 +3200,13 @@ function renderIdentidad(){
   html+='<div class="field"><label>RIF</label><input id="h-rif" value="'+escA(h.rif)+'" placeholder="ej: J-12345678-9"></div>';
   html+='<div class="field"><label>Dirección</label><input id="h-dir" value="'+escA(h.direccion)+'" placeholder="Av. principal, ciudad, estado"></div>';
   html+='<div class="field"><label>Eslogan</label><input id="h-eslogan" value="'+escA(h.eslogan)+'" placeholder="Frase corta del hotel"></div>';
+  html+='<div class="field"><label>WhatsApp del hotel</label><input id="h-whatsapp" value="'+escA(h.whatsapp||'')+'" placeholder="ej: 0412-1234567"></div>';
+  html+='<div class="field"><label>Correo del hotel</label><input id="h-correo" value="'+escA(h.correo||'')+'" placeholder="recepcion@tuhotel.com"></div>';
+  html+='<p style="font-size:12px;color:#8893a5;margin:-4px 0 10px">Estos dos datos se añaden al final de los mensajes de WhatsApp y correo que le envías al huésped, para que sepa cómo responderte. <b>No</b> es el número desde el que se envía: eso depende del WhatsApp abierto en este equipo (ver abajo).</p>';
+  html+='<div class="section-title" style="font-size:15px;margin-top:18px">Mensajes al huésped</div>';
+  html+='<div class="field"><label>Mensaje de bienvenida (al hacer check-in)</label><textarea id="h-tpl-bienvenida" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(h.plantillaBienvenida||plantillaBienvenidaDefault())+'</textarea></div>';
+  html+='<div class="field"><label>Mensaje de reserva (localizador)</label><textarea id="h-tpl-reserva" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(h.plantillaReserva||plantillaReservaDefault())+'</textarea></div>';
+  html+='<p style="font-size:12px;color:#8893a5;margin:-4px 0 10px;line-height:1.6">Escribe el mensaje a tu gusto. Usa estas <b>etiquetas</b> y la app las cambia solas por los datos reales:<br>• <b>[nombre]</b> = nombre del huésped · <b>[hotel]</b> = nombre del hotel<br>• Solo en bienvenida: <b>[habitacion]</b> = número de habitación<br>• Solo en reserva: <b>[localizador]</b>, <b>[entrada]</b>, <b>[salida]</b><br>El WhatsApp y el correo del hotel se agregan solos al final. Si borras todo el texto, vuelve al mensaje por defecto.</p>';
   html+='<div class="field"><label>Logo</label><div style="display:flex;align-items:center;gap:14px;margin-top:6px">';
   html+='<div style="width:72px;height:72px;border-radius:12px;border:1px solid #c7d0dd;background:#f3f6fb no-repeat center/contain'+(h.logo?(";background-image:url('"+h.logo+"')"):'')+'"></div>';
   html+='<div><input type="file" id="h-logo-file" accept="image/*" onchange="cargarLogo(event)" style="padding:6px;border:none">';
