@@ -102,20 +102,6 @@ label{font-size:13px;font-weight:600;color:#44526a;}
     <button class="btn-primary" onclick="login()">Entrar</button>
     <div class="login-err" id="login-err"></div>
     <div class="hint" id="login-hint"></div>
-    <button class="btn-ghost" style="width:100%;margin-top:4px;font-size:12px" onclick="logoutCloud()">Desconectar esta PC de la nube</button>
-  </div>
-</div>
-
-<!-- ===== CONEXIÓN SEGURA A LA NUBE ===== -->
-<div id="view-cloud" style="display:none;align-items:center;justify-content:center;min-height:100vh;padding:20px">
-  <div class="login-card">
-    <h1>🔒 Conexión segura</h1>
-    <p class="sub">Ingresa el correo y la contraseña de tu hotel para conectar este equipo a la nube.</p>
-    <div class="field"><label>Correo</label><input id="cl-email" type="email" autocomplete="username" placeholder="correo@ejemplo.com"></div>
-    <div class="field"><label>Contraseña</label><input id="cl-pass" type="password" autocomplete="current-password" placeholder="••••••••"></div>
-    <button class="btn-primary" onclick="cloudLogin()">Conectar</button>
-    <div class="login-err" id="cl-err"></div>
-    <div class="hint">Esta conexión se recuerda en este equipo. Solo tienes que hacerla una vez por computadora o teléfono.</div>
   </div>
 </div>
 
@@ -141,9 +127,13 @@ label{font-size:13px;font-weight:600;color:#44526a;}
 /* ====== CONEXIÓN A LA NUBE (Supabase) ====== */
 const SB_URL = 'https://wazhhzbwmzitqlgoxjuf.supabase.co';
 const SB_KEY = 'sb_publishable_PJfzZshU0tA9FigMiysl1Q_1wMFjKHJ';
+/* Cuenta con la que la app "entra" a la nube (seguridad nivel suficiente).
+   Debes crear ESTE MISMO usuario en Supabase (Authentication). */
+const SB_APP_EMAIL = 'operador@hotellajareal.com';
+const SB_APP_PASS  = 'LajaReal2026-Caja';
 /* Cajas de datos que se comparten entre todos los equipos.
    OJO: 'session' NO se comparte (cada equipo inicia sesión aparte). */
-const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos'];
+const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia'];
 
 /* ====== ALMACENAMIENTO (local + nube) ====== */
 const DB = {
@@ -157,63 +147,38 @@ const DB = {
 const CLOUD = {
   ready:false,
   enabled: !!(SB_URL && SB_KEY),
-  authed:false,
-  token:null,
-  refreshToken:null,
   _cloudKeys:[],
-  _h(extra){
-    const auth = this.token ? ('Bearer '+this.token) : ('Bearer '+SB_KEY);
-    return Object.assign({'apikey':SB_KEY,'Authorization':auth,'Content-Type':'application/json'}, extra||{});
-  },
-  setTokens(acc, ref){
-    this.token = acc || null;
-    if(ref) this.refreshToken = ref;
-    this.authed = !!this.token;
-    try{ localStorage.setItem('sbauth_token', this.token||''); localStorage.setItem('sbauth_refresh', this.refreshToken||''); }catch(e){}
-  },
-  clearTokens(){
-    this.token=null; this.refreshToken=null; this.authed=false;
-    try{ localStorage.removeItem('sbauth_token'); localStorage.removeItem('sbauth_refresh'); }catch(e){}
-  },
-  async signIn(email, pass){
-    const r = await fetch(SB_URL+'/auth/v1/token?grant_type=password', {
-      method:'POST', headers:{'apikey':SB_KEY,'Content-Type':'application/json'},
-      body: JSON.stringify({email:email, password:pass})
-    });
-    if(!r.ok) throw new Error('login '+r.status);
-    const d = await r.json();
-    if(!d.access_token) throw new Error('no token');
-    this.setTokens(d.access_token, d.refresh_token);
-  },
-  async doRefresh(){
-    if(!this.refreshToken) return false;
+  _token:null, _refresh:null, _exp:0,
+  _authEnabled: !!(SB_APP_EMAIL && SB_APP_PASS),
+  _h(extra){ const auth = this._token ? ('Bearer '+this._token) : ('Bearer '+SB_KEY); return Object.assign({'apikey':SB_KEY,'Authorization':auth,'Content-Type':'application/json'}, extra||{}); },
+  async signIn(){
+    if(!this._authEnabled) return;
     try{
-      const r = await fetch(SB_URL+'/auth/v1/token?grant_type=refresh_token', {
-        method:'POST', headers:{'apikey':SB_KEY,'Content-Type':'application/json'},
-        body: JSON.stringify({refresh_token:this.refreshToken})
-      });
-      if(!r.ok) return false;
+      const r = await fetch(SB_URL+'/auth/v1/token?grant_type=password', {method:'POST', headers:{'apikey':SB_KEY,'Content-Type':'application/json'}, body: JSON.stringify({email:SB_APP_EMAIL, password:SB_APP_PASS})});
+      if(!r.ok) throw new Error('signin '+r.status);
       const d = await r.json();
-      if(!d.access_token) return false;
-      this.setTokens(d.access_token, d.refresh_token);
-      return true;
-    }catch(e){ return false; }
+      this._token=d.access_token; this._refresh=d.refresh_token; this._exp=Date.now()+((d.expires_in||3600)*1000);
+    }catch(e){ this._token=null; this._refresh=null; this._exp=0; }
   },
-  async restore(){
-    try{ this.token = localStorage.getItem('sbauth_token')||null; this.refreshToken = localStorage.getItem('sbauth_refresh')||null; }catch(e){}
-    if(this.refreshToken){ const ok = await this.doRefresh(); this.authed = ok; return ok; }
-    this.authed = false; return false;
+  async _refreshTok(){
+    if(!this._authEnabled || !this._refresh){ return this.signIn(); }
+    try{
+      const r = await fetch(SB_URL+'/auth/v1/token?grant_type=refresh_token', {method:'POST', headers:{'apikey':SB_KEY,'Content-Type':'application/json'}, body: JSON.stringify({refresh_token:this._refresh})});
+      if(!r.ok) throw new Error('refresh '+r.status);
+      const d = await r.json();
+      this._token=d.access_token; this._refresh=d.refresh_token; this._exp=Date.now()+((d.expires_in||3600)*1000);
+    }catch(e){ await this.signIn(); }
   },
-  async api(path, opts){
-    opts = opts||{};
-    const mk = ()=> Object.assign({}, opts, {headers:this._h(opts.extraHeaders)});
-    let r = await fetch(SB_URL+path, mk());
-    if(r.status===401 && this.refreshToken){ if(await this.doRefresh()) r = await fetch(SB_URL+path, mk()); }
-    return r;
+  async ensureAuth(){
+    if(!this._authEnabled) return;
+    if(!this._token){ await this.signIn(); return; }
+    if(Date.now() > (this._exp - 60000)){ await this._refreshTok(); }
   },
   async pullAll(){
     if(!this.enabled) return;
-    const r = await this.api('/rest/v1/estado_app?select=clave,valor', {});
+    await this.ensureAuth();
+    let r = await fetch(SB_URL+'/rest/v1/estado_app?select=clave,valor', {headers:this._h()});
+    if(r.status===401 && this._authEnabled){ await this.signIn(); r = await fetch(SB_URL+'/rest/v1/estado_app?select=clave,valor', {headers:this._h()}); }
     if(!r.ok) throw new Error('pull '+r.status);
     const rows = await r.json();
     this._cloudKeys = rows.map(x=>x.clave);
@@ -223,15 +188,15 @@ const CLOUD = {
     if(!this.enabled || !this.ready) return;
     if(!SYNC_KEYS.includes(k)) return;
     try{
-      await this.api('/rest/v1/estado_app?on_conflict=clave', {
-        method:'POST',
-        extraHeaders:{'Prefer':'resolution=merge-duplicates'},
-        body: JSON.stringify({clave:k, valor:val, actualizado:new Date().toISOString()})
-      });
+      await this.ensureAuth();
+      const body = JSON.stringify({clave:k, valor:val, actualizado:new Date().toISOString()});
+      let r = await fetch(SB_URL+'/rest/v1/estado_app?on_conflict=clave', {method:'POST', headers:this._h({'Prefer':'resolution=merge-duplicates'}), body});
+      if(r.status===401 && this._authEnabled){ await this.signIn(); await fetch(SB_URL+'/rest/v1/estado_app?on_conflict=clave', {method:'POST', headers:this._h({'Prefer':'resolution=merge-duplicates'}), body}); }
     }catch(e){ /* sin conexión: queda guardado en el equipo y se subirá luego */ }
   },
   async pushMissing(){
     if(!this.enabled) return;
+    await this.ensureAuth();
     for(const k of SYNC_KEYS){
       const local = DB.get(k);
       if(local!==undefined && local!==null && !this._cloudKeys.includes(k)){ await this.push(k, local); }
@@ -295,42 +260,66 @@ function setPermisoSup(k,v){ const p=DB.get('permisos',{})||{}; if(!p.supervisor
 function puedeSup(k){ const rol=session().rol; if(esMaster(rol)) return true; if(rol==='supervisor') return !!permisosSup()[k]; return false; }
 
 /* ====== SESIÓN / LOGIN ====== */
-function login(){
+async function login(){
   const u = document.getElementById('in-user').value.trim().toLowerCase();
   const p = document.getElementById('in-pass').value;
   const found = DB.get('users',[]).find(x=>x.user===u && x.pass===p);
   if(!found){ document.getElementById('login-err').innerText='Usuario o contraseña incorrectos'; return; }
+  // Traer el estado más reciente de la nube para saber quién está conectado
+  try{ if(typeof CLOUD!=='undefined' && CLOUD.enabled){ await CLOUD.pullAll(); } }catch(e){}
+  if(usuarioYaConectado(u)){ document.getElementById('login-err').innerText='Este usuario ya tiene una sesión abierta en otro equipo. Cierra la sesión allí o espera un momento e inténtalo de nuevo.'; return; }
   DB.set('session', found);
   document.getElementById('login-err').innerText='';
   document.getElementById('in-pass').value='';
+  presenciaLatido();
   openApp();
 }
-function logout(){ localStorage.removeItem('hotel_session'); location.reload(); }
+function logout(){
+  const act = turnoActivo();
+  const s = session();
+  if(act && s && act.usuario===s.user){
+    if(confirm('Tienes tu TURNO ABIERTO.\n\nAceptar = cerrar el turno y salir\nCancelar = salir sin cerrarlo (seguirá abierto)')){
+      const t=turnos(); const a=t.find(x=>x.abierto); if(a){ a.fin=new Date().toISOString(); a.abierto=false; saveTurnos(t); }
+    }
+  }
+  try{ presenciaSalir(); }catch(e){}
+  localStorage.removeItem('hotel_session'); location.reload();
+}
 function session(){ return DB.get('session', null); }
 
-/* ---- Conexión segura a la nube (inicio de sesión de Supabase) ---- */
-function mostrarCloudLogin(){
-  document.getElementById('view-login').style.display='none';
-  document.getElementById('view-app').style.display='none';
-  document.getElementById('view-cloud').style.display='flex';
+/* ====== PRESENCIA: quién está conectado ====== */
+function deviceId(){
+  let d=localStorage.getItem('hotel_deviceId');
+  if(!d){ d='dev'+Date.now().toString(36)+Math.random().toString(36).slice(2,8); localStorage.setItem('hotel_deviceId', d); }
+  return d;
 }
-async function cloudLogin(){
-  const em=(document.getElementById('cl-email').value||'').trim();
-  const pw=document.getElementById('cl-pass').value;
-  const err=document.getElementById('cl-err');
-  if(!em||!pw){ err.innerText='Escribe el correo y la contraseña.'; return; }
-  err.style.color=''; err.innerText='Conectando…';
-  try{
-    await CLOUD.signIn(em, pw);
-    err.innerText=''; document.getElementById('cl-pass').value='';
-    document.getElementById('view-cloud').style.display='none';
-    await iniciarConNube();
-  }catch(e){ err.innerText='No se pudo conectar. Revisa el correo y la contraseña.'; }
+function presenciaObj(){ const p=DB.get('presencia',{}); return (p&&typeof p==='object'&&!Array.isArray(p))?p:{}; }
+function presenciaActivos(maxMs){
+  maxMs=maxMs||40000; const now=Date.now(); const o=presenciaObj(); const out=[];
+  Object.keys(o).forEach(k=>{ const e=o[k]; if(e&&e.ts&&(now-e.ts)<maxMs) out.push(e); });
+  return out;
 }
-function logoutCloud(){ CLOUD.clearTokens(); location.reload(); }
+function presenciaLatido(){
+  const s=session(); if(!s) return;
+  const o=presenciaObj(); const now=Date.now();
+  Object.keys(o).forEach(k=>{ if(!o[k]||!o[k].ts||(now-o[k].ts)>120000) delete o[k]; });
+  o[deviceId()]={ deviceId:deviceId(), user:s.user, nombre:s.nombre, rol:s.rol, ts:now };
+  DB.set('presencia', o);
+}
+function presenciaSalir(){ const o=presenciaObj(); delete o[deviceId()]; DB.set('presencia', o); }
+function usuarioYaConectado(user){
+  const now=Date.now(); const o=presenciaObj(); const my=deviceId();
+  return Object.keys(o).some(k=>{ const e=o[k]; return e && e.user===user && e.deviceId!==my && e.ts && (now-e.ts)<40000; });
+}
+let _presTimer=null;
+function iniciarPresencia(){
+  presenciaLatido();
+  if(_presTimer) clearInterval(_presTimer);
+  _presTimer=setInterval(()=>{ if(session()) presenciaLatido(); }, 15000);
+}
+window.addEventListener('beforeunload', function(){ try{ presenciaSalir(); }catch(e){} });
 
 document.getElementById('in-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') login(); });
-document.getElementById('cl-pass').addEventListener('keydown',e=>{ if(e.key==='Enter') cloudLogin(); });
 document.getElementById('login-hint').innerHTML =
   'Cuentas de prueba:<br>admin / admin &nbsp;·&nbsp; recepcion / 1234<br>limpieza / 1234 &nbsp;·&nbsp; mantenimiento / 1234';
 
@@ -342,6 +331,7 @@ function openApp(){
   document.getElementById('view-app').style.display='block';
   document.getElementById('who').innerText = s.nombre;
   document.getElementById('role-badge').innerText = ROLES[s.rol]||s.rol;
+  iniciarPresencia();
   render();
 }
 
@@ -389,20 +379,33 @@ function pmWidget(prefix){
   return h;
 }
 function pmLineHTML(prefix, monto){
-  return '<div class="pm-linea" style="display:flex;gap:6px;margin-bottom:6px;align-items:center">'
-    +'<select class="'+prefix+'-pm-met" style="flex:2">'+metodoOptions('')+'</select>'
+  return '<div class="pm-linea" style="margin-bottom:8px">'
+    +'<div style="display:flex;gap:6px;align-items:center">'
+    +'<select class="'+prefix+'-pm-met" onchange="pmRefToggle(this,\''+prefix+'\')" style="flex:2">'+metodoOptions('')+'</select>'
     +'<input type="number" min="0" step="0.01" class="'+prefix+'-pm-monto" value="'+(monto!=null&&monto!==''?monto:'')+'" placeholder="USD" oninput="pmRecalc(\''+prefix+'\')" style="flex:1;min-width:70px">'
-    +'<button type="button" class="btn-ghost" style="padding:4px 9px" onclick="pmDelLinea(this,\''+prefix+'\')">×</button></div>';
+    +'<button type="button" class="btn-ghost" style="padding:4px 9px" onclick="pmDelLinea(this,\''+prefix+'\')">×</button></div>'
+    +'<input type="text" class="'+prefix+'-pm-ref" placeholder="N° de referencia / confirmación" style="display:none;margin-top:5px;font-size:13px">'
+    +'</div>';
 }
+function pmRefToggle(sel, prefix){
+  const linea=sel.closest('.pm-linea'); if(!linea) return;
+  const ref=linea.querySelector('.'+prefix+'-pm-ref'); if(!ref) return;
+  const efectivo=/efectivo/i.test(sel.value);
+  ref.style.display=efectivo?'none':'block';
+  if(efectivo) ref.value='';
+}
+function pmInitRefs(prefix){ document.querySelectorAll('#'+prefix+'-pm-lineas .'+prefix+'-pm-met').forEach(sel=>pmRefToggle(sel,prefix)); }
 function pmReset(prefix, totalUsd){
   PM_STATE[prefix]={total:Number(totalUsd)||0};
   const cont=document.getElementById(prefix+'-pm-lineas'); if(!cont) return;
   cont.innerHTML=pmLineHTML(prefix, (Number(totalUsd)||0)>0?Number(totalUsd).toFixed(2):'');
+  pmInitRefs(prefix);
   pmRecalc(prefix);
 }
 function pmAddLinea(prefix){
   const cont=document.getElementById(prefix+'-pm-lineas'); if(!cont) return;
   cont.insertAdjacentHTML('beforeend', pmLineHTML(prefix, ''));
+  pmInitRefs(prefix);
   pmRecalc(prefix);
 }
 function pmDelLinea(btn, prefix){
@@ -433,13 +436,13 @@ function pmLeer(prefix){
   const st=PM_STATE[prefix]||{total:0};
   const rows=Array.prototype.slice.call(document.querySelectorAll('#'+prefix+'-pm-lineas .pm-linea'));
   let lineas=[];
-  rows.forEach(row=>{ const met=row.querySelector('.'+prefix+'-pm-met').value; const mo=parseFloat(row.querySelector('.'+prefix+'-pm-monto').value)||0; if(mo>0) lineas.push({metodo:met, montoUsd:mo}); });
-  if(lineas.length===0 && rows.length===1 && (st.total||0)>0){ lineas.push({metodo:rows[0].querySelector('.'+prefix+'-pm-met').value, montoUsd:st.total}); }
+  rows.forEach(row=>{ const met=row.querySelector('.'+prefix+'-pm-met').value; const mo=parseFloat(row.querySelector('.'+prefix+'-pm-monto').value)||0; const refEl=row.querySelector('.'+prefix+'-pm-ref'); const ref=refEl?(refEl.value||'').trim():''; if(mo>0) lineas.push({metodo:met, montoUsd:mo, ref:ref}); });
+  if(lineas.length===0 && rows.length===1 && (st.total||0)>0){ const r0=rows[0]; const refEl=r0.querySelector('.'+prefix+'-pm-ref'); lineas.push({metodo:r0.querySelector('.'+prefix+'-pm-met').value, montoUsd:st.total, ref:refEl?(refEl.value||'').trim():''}); }
   if(lineas.length===0) return {ok:false, msg:'Indica al menos una forma de pago con su monto.'};
   const suma=lineas.reduce((s,l)=>s+l.montoUsd,0);
   if((st.total||0)>0 && Math.abs(suma-st.total)>0.01) return {ok:false, msg:'Los montos de las formas de pago ('+fmtUSD(suma)+') no coinciden con el total a cobrar ('+fmtUSD(st.total)+'). Ajusta los montos.'};
   lineas.forEach(l=>{ l.montoBs=precioBs(l.montoUsd); });
-  const metodoStr=lineas.map(l=> lineas.length>1 ? (l.metodo+' ('+fmtUSD(l.montoUsd)+')') : l.metodo).join(' + ');
+  const metodoStr=lineas.map(l=>{ let s=l.metodo; if(lineas.length>1) s+=' ('+fmtUSD(l.montoUsd)+')'; if(l.ref) s+=' [Ref: '+l.ref+']'; return s; }).join(' + ');
   return {ok:true, metodos:lineas, metodoStr:metodoStr, totalUsd:suma};
 }
 function updateRoom(num, patch){ const r=rooms(); const i=r.findIndex(x=>x.num===num); r[i]=Object.assign(r[i],patch); saveRooms(r); }
@@ -476,6 +479,16 @@ function renderRecepcion(){
   tabs += recepTab('clientes','Clientes')+recepTab('kardex','Kardex / Turno');
   if(verGestionHab) tabs += recepTab('habitaciones','Habitaciones');
   html += '<div class="tabs">'+tabs+'</div>';
+  if(!turnoActivo()){
+    html += '<div style="background:#fff8e1;border:1px solid #f0d58a;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:220px;font-size:13.5px;color:#7a5b00">⚠️ <b>No hay ningún turno abierto.</b> Abre tu turno al empezar para que cada cobro y movimiento quede a tu nombre.</div><button class="btn-green" onclick="abrirTurno()">Abrir mi turno</button></div>';
+  } else {
+    const _ta=turnoActivo(); const _me=session();
+    if(_me && _ta.usuario===_me.user){
+      html += '<div style="background:#e9f8ee;border:1px solid #9fdcb4;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:220px;font-size:13px;color:#1d6b38">✅ Tu turno está <b>abierto</b> desde '+fechaHoraCorta(_ta.inicio)+'. Recuerda cerrarlo al terminar.</div><button class="btn-red" style="padding:6px 12px" onclick="cerrarTurno()">Cerrar turno</button></div>';
+    } else {
+      html += '<div style="background:#fdeeee;border:1px solid #f1b5b5;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#a23b3b">⚠️ Hay un turno abierto a nombre de <b>'+esc(_ta.nombre)+'</b>. Pide que lo cierre antes de abrir el tuyo.</div>';
+    }
+  }
   if(recepView==='caja'){ c.innerHTML = html + renderCaja(); return; }
   if(recepView==='reportes'){ c.innerHTML = html + renderReportePagos(); return; }
   if(recepView==='habitaciones'){ c.innerHTML = html + renderGestionHab() + renderOcupacionTipo(); return; }
@@ -545,6 +558,11 @@ function abrirHab(num){
       cgs.forEach(cg=>{ body += '<tr><td>'+esc(cg.tipo)+'</td><td>'+esc(cg.desc||'—')+'</td><td>'+fmtUSD(cg.montoUsd)+'</td><td>'+(cg.pagado?'<span style="color:var(--verde)">Cobrado</span>':'<span style="color:#b5651d">Pendiente</span>')+'</td><td style="text-align:right">'+(cg.pagado?'':'<button class="btn-ghost" style="padding:4px 8px" onclick="quitarCargo('+num+',\''+cg.id+'\')">Quitar</button>')+'</td></tr>'; });
       body += '</table><div style="text-align:right;font-size:13px;color:#55637a;margin:6px 0">Consumos pendientes: <b>'+fmtUSD(totalCargosPend(r))+'</b></div>';
     }
+    const abs = Array.isArray(r.abonos)?r.abonos:[];
+    if(abs.length){
+      const tAb = abs.reduce((s,a)=>s+Number(a.montoUsd||0),0);
+      body += '<div style="background:#e9f8ee;border:1px solid #9fdcb4;border-radius:8px;padding:8px 10px;font-size:13px;margin:10px 0;color:#1d6b38">💵 Adelantos recibidos: <b>'+fmtUSD(tAb)+'</b> · se descontarán al hacer el check-out</div>';
+    }
     body += '<div class="divider"></div><div class="actions">';
     body += '<button class="btn-green" onclick="agregarCargoModal('+num+')">Agregar consumo</button>';
     body += '<button class="btn-blue" onclick="cobrarSinCheckoutModal('+num+')">Cobrar sin check-out</button>';
@@ -580,7 +598,12 @@ function abrirHab(num){
 function stateColor(e){ return {libre:'var(--verde)',ocupada:'var(--rojo)',sucia:'var(--naranja)',limpieza:'var(--azul2)',mantenimiento:'var(--gris)'}[e]; }
 function showModal(h){ document.getElementById('modal').innerHTML=h; document.getElementById('modal-bg').style.display='flex'; }
 function cerrarModal(){ document.getElementById('modal-bg').style.display='none'; }
-document.getElementById('modal-bg').addEventListener('click',e=>{ if(e.target.id==='modal-bg') cerrarModal(); });
+function modalTieneForm(){ const m=document.getElementById('modal'); if(!m) return false; return m.querySelector('input, textarea, select')!==null; }
+document.getElementById('modal-bg').addEventListener('click',e=>{
+  if(e.target.id!=='modal-bg') return;
+  if(modalTieneForm()){ if(!confirm('¿Cerrar esta ventana? Se perderá lo que hayas escrito o seleccionado aquí.')) return; }
+  cerrarModal();
+});
 
 function clienteCheckinOptions(){
   return clientes().slice().sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||'')).map(c=>{
@@ -697,6 +720,9 @@ function pedirCheckout(num){
   const pend = cargosDe(r).filter(c=>!c.pagado);
   const consUsd = pend.reduce((s,c)=>s+Number(c.montoUsd||0),0);
   const totUsd = hosp + consUsd;
+  const abonos = Array.isArray(r.abonos)?r.abonos:[];
+  const abonoUsd = abonos.reduce((s,a)=>s+Number(a.montoUsd||0),0);
+  const saldoUsd = Math.max(0, totUsd - abonoUsd);
   const c = clienteDeHab(r);
   let body = '<button class="close" onclick="abrirHab('+num+')">×</button>';
   body += '<h2>Recibo · Hab. '+num+'</h2>';
@@ -716,18 +742,21 @@ function pedirCheckout(num){
   body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Tarifa × noches</span><span>'+fmtUSD(r.tarifa)+' × '+noches+' = '+fmtUSD(hosp)+'</span></div>';
   pend.forEach(cg=>{ body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>'+esc(cg.tipo+(cg.desc?' · '+cg.desc:''))+'</span><span>'+fmtUSD(cg.montoUsd)+'</span></div>'; });
   body += '<div class="divider"></div>';
-  body += '<div style="display:flex;justify-content:space-between;font-weight:800;color:var(--azul);font-size:18px"><span>Total USD</span><span>'+fmtUSD(totUsd)+'</span></div>';
-  body += '<div style="display:flex;justify-content:space-between;font-weight:800;font-size:18px;margin-top:4px"><span>Total Bs</span><span>'+fmtBs(precioBs(totUsd))+'</span></div>';
+  body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Total de la cuenta</span><span>'+fmtUSD(totUsd)+'</span></div>';
+  abonos.forEach(a=>{ body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px;color:var(--verde)"><span>Adelanto · '+esc(a.concepto||'Adelanto')+'</span><span>- '+fmtUSD(a.montoUsd)+'</span></div>'; });
+  body += '<div class="divider"></div>';
+  body += '<div style="display:flex;justify-content:space-between;font-weight:800;color:var(--azul);font-size:18px"><span>'+(abonoUsd>0?'Saldo a cobrar USD':'Total USD')+'</span><span>'+fmtUSD(saldoUsd)+'</span></div>';
+  body += '<div style="display:flex;justify-content:space-between;font-weight:800;font-size:18px;margin-top:4px"><span>'+(abonoUsd>0?'Saldo a cobrar Bs':'Total Bs')+'</span><span>'+fmtBs(precioBs(saldoUsd))+'</span></div>';
   body += '<div style="text-align:center;font-size:11px;color:#8893a5;margin-top:8px">Tasa: '+fmtBs(tasa())+' / $1</div></div>';
   body += pmWidget('co');
   body += '<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cobrarYCheckout('+num+')">Cobrar y hacer check-out</button>';
   body += '<button class="btn-primary" onclick="imprimirRecibo('+num+')">Imprimir / PDF</button>';
   body += '<button class="btn-red" onclick="checkoutSinCobro('+num+')">Check-out sin cobro</button>';
   body += '<button class="btn-ghost" onclick="abrirHab('+num+')">Volver</button></div>';
-  showModal(body); pmReset('co', totUsd);
+  showModal(body); pmReset('co', saldoUsd);
 }
 function confirmCheckout(num){
-  updateRoom(num,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], limpiezaPendiente:false});
+  updateRoom(num,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false});
   cerrarModal(); render();
 }
 function checkoutSinCobro(num){
@@ -742,20 +771,32 @@ function cobrarYCheckout(num){
   const pend = cargosDe(r).filter(c=>!c.pagado);
   const consUsd = pend.reduce((s,c)=>s+Number(c.montoUsd||0),0);
   const totUsd = hosp + consUsd;
-  const pm=pmLeer('co'); if(!pm.ok){ alert(pm.msg); return; }
-  const metodo = pm.metodoStr;
+  const abonos = Array.isArray(r.abonos)?r.abonos:[];
+  const abonoUsd = abonos.reduce((s,a)=>s+Number(a.montoUsd||0),0);
+  const saldoUsd = Math.max(0, totUsd - abonoUsd);
   const c = clienteDeHab(r); const cr = c?clienteResumen(c):null;
   const now = new Date();
+  const detAb = abonoUsd>0 ? (' (ya adelantó '+fmtUSD(abonoUsd)+')') : '';
+  if(saldoUsd<=0.009){
+    // Ya estaba todo pagado por adelantado: no se cobra nada más
+    if(!confirm('Esta cuenta ya quedó cubierta con los adelantos ('+fmtUSD(abonoUsd)+'). No hay saldo por cobrar.\n\n¿Hacer el check-out?')) return;
+    const det0 = noches+' noche(s)'+(consUsd>0?' + consumos '+fmtUSD(consUsd):'')+' · pagado por adelantado'+detAb;
+    logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:det0, montoUsd:0, montoBs:0, metodo:'Pagado por adelantado'});
+    cerrarEstadia(r.clienteId||'', num, {noches:noches, montoUsd:0, metodo:'Pagado por adelantado'});
+    confirmCheckout(num); return;
+  }
+  const pm=pmLeer('co'); if(!pm.ok){ alert(pm.msg); return; }
+  const metodo = pm.metodoStr;
   const ctrl = siguienteControl();
   const pagos = DB.get('pagos',[]);
   pagos.unshift({ id:Date.now(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
     hab:num, huesped:r.huesped||'', tipo:r.tipo||'', noches:noches, metodo:metodo, metodos:pm.metodos,
     clienteId:r.clienteId||'', clienteDoc:cr?cr.doc:'', clienteCiudad:cr?cr.ciudad:'',
-    montoUsd:totUsd, montoBs:precioBs(totUsd), tasa:tasa(), usuario:session().nombre });
+    montoUsd:saldoUsd, montoBs:precioBs(saldoUsd), tasa:tasa(), usuario:session().nombre });
   DB.set('pagos', pagos);
-  const det = noches+' noche(s)'+(consUsd>0?' + consumos '+fmtUSD(consUsd):'')+' cobradas';
-  logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:det, montoUsd:totUsd, montoBs:precioBs(totUsd), metodo:metodo});
-  cerrarEstadia(r.clienteId||'', num, {noches:noches, montoUsd:totUsd, metodo:metodo});
+  const det = noches+' noche(s)'+(consUsd>0?' + consumos '+fmtUSD(consUsd):'')+' cobradas'+detAb;
+  logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:det, montoUsd:saldoUsd, montoBs:precioBs(saldoUsd), metodo:metodo});
+  cerrarEstadia(r.clienteId||'', num, {noches:noches, montoUsd:saldoUsd, metodo:metodo});
   confirmCheckout(num);
 }
 /* ====== CONSUMOS, COBRO SIN CHECK-OUT, LIMPIEZA Y CAMBIO DE HAB. ====== */
@@ -836,9 +877,11 @@ function cobrarSinCheckout(num){
     montoUsd:tot, montoBs:precioBs(tot), tasa:tasa(), usuario:session().nombre });
   DB.set('pagos',pagos);
   const cargos=cargosDe(r).map(cg=> ids.includes(cg.id)?Object.assign({},cg,{pagado:true}):cg);
-  updateRoom(num,{cargos:cargos});
+  const patch={cargos:cargos};
+  if(otro>0){ const ab=Array.isArray(r.abonos)?r.abonos.slice():[]; ab.push({id:'ab'+Date.now(), concepto:concepto||'Adelanto', montoUsd:otro, fecha:now.toISOString()}); patch.abonos=ab; }
+  updateRoom(num,patch);
   logKardex('pago',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Cobro sin check-out · '+(detParts.join(' + ')||'Cobro en habitación'), montoUsd:tot, montoBs:precioBs(tot), metodo:metodo});
-  alert('Cobro registrado: '+fmtUSD(tot)+'. La habitación sigue ocupada.');
+  alert('Cobro registrado: '+fmtUSD(tot)+'. La habitación sigue ocupada.'+(otro>0?'\nEl adelanto se descontará automáticamente al hacer el check-out.':''));
   abrirHab(num);
 }
 function solicitarLimpieza(num){
@@ -878,8 +921,8 @@ function confirmarCambioHab(origen){
   const mant=document.getElementById('ch-mant').checked;
   const o=findRoom(origen); const d=findRoom(destinoNum);
   if(!d || d.estado!=='libre'){ alert('Esa habitación ya no está libre. Elige otra.'); return; }
-  updateRoom(destinoNum,{estado:'ocupada', huesped:o.huesped, clienteId:o.clienteId||'', personas:o.personas||1, noches:o.noches||1, tarifa:o.tarifa||0, checkin:o.checkin||'', salida:o.salida||'', cargos:cargosDe(o).slice(), nota:'', limpiezaPendiente:false});
-  updateRoom(origen,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], limpiezaPendiente:false, nota:'Habitación desocupada por cambio'+(motivo?' · '+motivo:'')});
+  updateRoom(destinoNum,{estado:'ocupada', huesped:o.huesped, clienteId:o.clienteId||'', personas:o.personas||1, noches:o.noches||1, tarifa:o.tarifa||0, checkin:o.checkin||'', salida:o.salida||'', cargos:cargosDe(o).slice(), abonos:(Array.isArray(o.abonos)?o.abonos.slice():[]), nota:'', limpiezaPendiente:false});
+  updateRoom(origen,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, nota:'Habitación desocupada por cambio'+(motivo?' · '+motivo:'')});
   moverEstadiaHab(o.clienteId||'', origen, destinoNum);
   logKardex('cambio',{hab:origen, huesped:o.huesped||'', clienteId:o.clienteId||'', detalle:'Cambio de Hab. '+origen+' → '+destinoNum+(motivo?' · '+motivo:''), montoUsd:0, montoBs:0, metodo:''});
   if(mant){
@@ -1106,8 +1149,21 @@ function renderUsuarios(){
   html += '<div class="field"><label>Contraseña</label><input id="u-pass"></div>';
   html += '<div class="field"><label>Rol</label><select id="u-rol">'+rolOptions('recepcion')+'</select></div>';
   html += '<button class="btn-primary" style="margin-top:10px" onclick="addUser()">Crear usuario</button></div>';
+  html += renderEnLinea();
   html += renderPermisosSupervisor();
   return html;
+}
+function renderEnLinea(){
+  const act=presenciaActivos(40000);
+  let h='<div class="divider"></div><div class="section-title" style="font-size:15px">Usuarios en línea ahora</div>';
+  h+='<div style="background:#fff;padding:14px 16px;border-radius:12px;max-width:520px;box-shadow:0 2px 8px rgba(0,0,0,.05)">';
+  if(act.length===0){ h+='<div style="color:#8893a5;font-size:13px">Nadie conectado en este momento.</div>'; }
+  else{
+    act.sort((a,b)=>(b.ts||0)-(a.ts||0));
+    act.forEach(e=>{ const secs=Math.round((Date.now()-(e.ts||0))/1000); h+='<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f0f2f6"><div style="width:10px;height:10px;border-radius:50%;background:var(--verde)"></div><div style="flex:1"><b>'+esc(e.nombre||e.user||'')+'</b> <span style="font-size:12px;color:#8893a5">'+(ROLES[e.rol]||e.rol||'')+'</span></div><div style="font-size:11.5px;color:#8893a5">activo hace '+(secs<5?'unos segundos':secs+'s')+'</div></div>'; });
+  }
+  h+='<div style="font-size:11.5px;color:#8893a5;margin-top:8px">Se actualiza solo cada pocos segundos. Cada equipo cuenta como una sesión.</div></div>';
+  return h;
 }
 function renderPermisosSupervisor(){
   const p=permisosSup();
@@ -1547,6 +1603,14 @@ function renderCaja(){
   h += '<div class="stats"><div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtBs(totBs)+'</div><div class="l">Total del día (Bs)</div></div>';
   h += '<div class="stat" style="border-left-color:var(--azul2)"><div class="n" style="font-size:20px">'+fmtUSD(totUsd)+'</div><div class="l">Equivalente USD</div></div>';
   h += '<div class="stat" style="border-left-color:var(--gris)"><div class="n">'+pagos.length+'</div><div class="l">Transacciones</div></div></div>';
+  const efBs = porMetodo['Efectivo Bs'] ? porMetodo['Efectivo Bs'].bs : 0;
+  const efUsd = porMetodo['Efectivo USD'] ? porMetodo['Efectivo USD'].usd : 0;
+  h += '<div style="background:#eef9f1;border:1px solid #bfe6cd;border-radius:12px;padding:16px 18px;margin-bottom:18px">';
+  h += '<div style="font-weight:800;color:#1d6b38;margin-bottom:10px;font-size:15px">💵 Dinero en caja (efectivo)</div>';
+  h += '<div style="display:flex;gap:12px;flex-wrap:wrap">';
+  h += '<div style="flex:1;min-width:150px;background:#fff;border-radius:10px;padding:12px 14px"><div style="font-size:22px;font-weight:800;color:var(--verde)">'+fmtBs(efBs)+'</div><div style="font-size:12.5px;color:#55637a">Efectivo en bolívares</div></div>';
+  h += '<div style="flex:1;min-width:150px;background:#fff;border-radius:10px;padding:12px 14px"><div style="font-size:22px;font-weight:800;color:var(--azul2)">'+fmtUSD(efUsd)+'</div><div style="font-size:12.5px;color:#55637a">Efectivo en dólares</div></div>';
+  h += '</div><div style="font-size:11.5px;color:#8893a5;margin-top:8px">Es el dinero físico que deberías tener en caja hoy. Los pagos móviles, transferencias, punto y Zelle van aparte, en el desglose de abajo.</div></div>';
   h += '<div class="section-title" style="font-size:15px">Desglose por forma de pago</div>';
   h += '<table class="users-table"><tr><th>Forma de pago</th><th>N°</th><th>Total Bs</th><th>Total USD</th></tr>';
   let keys = Object.keys(porMetodo);
@@ -2284,7 +2348,6 @@ function hayFormularioActivo(){
 
 function startPolling(){
   if(!CLOUD.enabled) return;
-  setInterval(()=>{ CLOUD.doRefresh(); }, 40*60*1000);
   setInterval(async ()=>{
     try{
       const antes = {};
@@ -2300,20 +2363,13 @@ function startPolling(){
   }, 6000);
 }
 
-async function iniciarConNube(){
+async function bootstrap(){
   try{ await CLOUD.pullAll(); }catch(e){ /* sin conexión al iniciar: usamos datos del equipo */ }
   seed();                 // completa cajas que falten (sin pisar lo que ya hay)
   CLOUD.ready = true;
   try{ await CLOUD.pushMissing(); }catch(e){}  // primer equipo: sube lo que la nube aún no tiene
   aplicarTema(); pintarMarca(); openApp();
   startPolling();
-}
-async function bootstrap(){
-  aplicarTema(); pintarMarca();
-  if(!CLOUD.enabled){ await iniciarConNube(); return; }
-  const ok = await CLOUD.restore();
-  if(ok){ await iniciarConNube(); }
-  else { mostrarCloudLogin(); }
 }
 bootstrap();
 </script>
