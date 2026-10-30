@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gestión Hotel · 65 Habitaciones</title>
+<!-- ===== App instalable (PWA) ===== -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0d3b66">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Hotel Laja Real">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <style>
 :root{--azul:#0d3b66;--azul2:#1b6ca8;--verde:#2e9e5b;--rojo:#d64045;--naranja:#e8871e;--gris:#7a8699;--morado:#6a4c93;--bg:#eef1f6;--card:#fff;}
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;}
@@ -125,6 +134,7 @@ label{font-size:13px;font-weight:600;color:#44526a;}
   <div class="topbar">
     <div class="brand">🏨 Gestión Hotel</div>
     <div class="right">
+      <button class="btn-orange" id="btn-instalar" style="display:none;padding:7px 12px;font-size:12.5px" onclick="instalarApp()">⬇️ Instalar app</button>
       <span id="who"></span>
       <span class="role-badge" id="role-badge"></span>
       <button class="btn-ghost" onclick="logout()">Salir</button>
@@ -280,10 +290,11 @@ const PERMISOS_CATALOGO=[
   ['anularPagos','Anular cobros en caja','Permite borrar/anular un cobro ya registrado en Caja.'],
   ['verReportePagos','Ver el reporte de pagos por fechas','Muestra la pestaña “Reporte de pagos” con los totales por rango.'],
   ['gestionHab','Gestionar habitaciones, tipos y precios','Le da la pestaña “Habitaciones” para crear/editar habitaciones, tipos y precios base.'],
-  ['verResumenOcupacion','Ver resumen de ocupación','Muestra en el Mapa de habitaciones el panel con el % de ocupación y cuántas habitaciones hay libres y ocupadas (sin montos de dinero).']
+  ['verResumenOcupacion','Ver resumen de ocupación','Muestra en el Mapa de habitaciones el panel con el % de ocupación y cuántas habitaciones hay libres y ocupadas (sin montos de dinero).'],
+  ['verOcupacionTipo','Ver ocupación por tipo de habitación','Muestra en el Mapa de habitaciones una tabla con cada tipo: cuántas habitaciones hay, ocupadas, libres y el % de ocupación (sin montos de dinero).']
 ];
 const ROLES_CONFIGURABLES=['recepcion','supervisor'];
-function permisosDefault(rol){ return {anularPagos:false, gestionHab:false, verReportePagos:true, verResumenOcupacion:(rol==='supervisor')}; }
+function permisosDefault(rol){ return {anularPagos:false, gestionHab:false, verReportePagos:true, verResumenOcupacion:(rol==='supervisor'), verOcupacionTipo:true}; }
 function permisosDe(rol){ const p=DB.get('permisos',null); const sp=(p&&p[rol])?p[rol]:{}; return Object.assign(permisosDefault(rol), sp); }
 function setPermiso(rol,k,v){ const p=DB.get('permisos',{})||{}; if(!p[rol]) p[rol]={}; p[rol][k]=!!v; DB.set('permisos', p); }
 function puede(k){ const rol=session().rol; if(esMaster(rol)) return true; if(ROLES_CONFIGURABLES.indexOf(rol)>=0) return !!permisosDe(rol)[k]; return false; }
@@ -550,6 +561,7 @@ function renderRecepcion(){
   html += statsBar();
   html += avisoLlegadasPendientes();
   if(puede('verResumenOcupacion')) html += statsNegocio(true);
+  if(puede('verOcupacionTipo')) html += renderOcupacionTipo();
   html += legend();
   html += '<div style="display:flex;justify-content:flex-end;margin:0 0 4px"><button class="btn-gray" style="padding:6px 12px" onclick="imprimirListadoHabitaciones()">🖨️ Imprimir listado de habitaciones</button></div>';
   html += filtroTipoBar();
@@ -661,6 +673,33 @@ function msgBienvenida(nombre, habNum){
 function msgReservaTxt(r){
   var tpl=(hotel().plantillaReserva||'').trim()||plantillaReservaDefault();
   return aplicarPlantilla(tpl, {nombre:soloNombre(r.nombre), localizador:r.loc, entrada:fmtFechaCorta(r.fechaEntrada), salida:fmtFechaCorta(r.fechaSalida), hotel:nombreHotelMsg()})+firmaHotelMsg();
+}
+function _valOr(id, fallback){ var e=document.getElementById(id); return (e&&String(e.value).trim())?String(e.value).trim():fallback; }
+function previewHotelNombre(){ return _valOr('h-nombre','')|| nombreHotelMsg(); }
+function previewFirma(){
+  var wa=_valOr('h-whatsapp',''), co=_valOr('h-correo',''); var bits=[];
+  if(wa) bits.push('WhatsApp: '+wa);
+  if(co) bits.push('Correo: '+co);
+  return bits.length?('\n\n— '+previewHotelNombre()+'\n'+bits.join(' · ')):'';
+}
+function previewMensaje(tipo){
+  var tpl, vars, titulo;
+  if(tipo==='reserva'){
+    tpl=_valOr('h-tpl-reserva', plantillaReservaDefault());
+    vars={nombre:'María', localizador:'LR-A2C4F', entrada:'25/12/2026', salida:'28/12/2026', hotel:previewHotelNombre()};
+    titulo='Vista previa · Mensaje de reserva';
+  } else {
+    tpl=_valOr('h-tpl-bienvenida', plantillaBienvenidaDefault());
+    vars={nombre:'María', habitacion:'203', hotel:previewHotelNombre()};
+    titulo='Vista previa · Mensaje de bienvenida';
+  }
+  var texto=aplicarPlantilla(tpl, vars)+previewFirma();
+  var b='<button class="close" onclick="cerrarModal()">×</button>';
+  b+='<h2>'+esc(titulo)+'</h2>';
+  b+='<p style="color:#55637a;font-size:13px;margin:0 0 14px">Así se verá el mensaje (con datos de ejemplo). El nombre, la habitación, las fechas y el localizador reales se cambian solos.</p>';
+  b+='<div style="background:#e7f7e1;border:1px solid #bfe6b2;border-radius:14px;padding:14px 16px;white-space:pre-wrap;font-size:14px;color:#1c3a22;line-height:1.5">'+esc(texto)+'</div>';
+  b+='<button class="btn-gray" style="width:100%;margin-top:14px" onclick="cerrarModal()">Cerrar</button>';
+  showModal(b);
 }
 function modalEnvio(opts){
   opts=opts||{};
@@ -3207,6 +3246,7 @@ function renderIdentidad(){
   html+='<div class="field"><label>Mensaje de bienvenida (al hacer check-in)</label><textarea id="h-tpl-bienvenida" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(h.plantillaBienvenida||plantillaBienvenidaDefault())+'</textarea></div>';
   html+='<div class="field"><label>Mensaje de reserva (localizador)</label><textarea id="h-tpl-reserva" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(h.plantillaReserva||plantillaReservaDefault())+'</textarea></div>';
   html+='<p style="font-size:12px;color:#8893a5;margin:-4px 0 10px;line-height:1.6">Escribe el mensaje a tu gusto. Usa estas <b>etiquetas</b> y la app las cambia solas por los datos reales:<br>• <b>[nombre]</b> = nombre del huésped · <b>[hotel]</b> = nombre del hotel<br>• Solo en bienvenida: <b>[habitacion]</b> = número de habitación<br>• Solo en reserva: <b>[localizador]</b>, <b>[entrada]</b>, <b>[salida]</b><br>El WhatsApp y el correo del hotel se agregan solos al final. Si borras todo el texto, vuelve al mensaje por defecto.</p>';
+  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 12px"><button class="btn-ghost" style="padding:8px 14px" onclick="previewMensaje(\'bienvenida\')">👁️ Ver bienvenida</button><button class="btn-ghost" style="padding:8px 14px" onclick="previewMensaje(\'reserva\')">👁️ Ver reserva</button></div>';
   html+='<div class="field"><label>Logo</label><div style="display:flex;align-items:center;gap:14px;margin-top:6px">';
   html+='<div style="width:72px;height:72px;border-radius:12px;border:1px solid #c7d0dd;background:#f3f6fb no-repeat center/contain'+(h.logo?(";background-image:url('"+h.logo+"')"):'')+'"></div>';
   html+='<div><input type="file" id="h-logo-file" accept="image/*" onchange="cargarLogo(event)" style="padding:6px;border:none">';
@@ -3276,6 +3316,52 @@ function startPolling(){
       }
     }catch(e){ /* sin conexión: seguimos con los datos del equipo */ }
   }, 6000);
+}
+
+/* ====== APP INSTALABLE (PWA) ====== */
+let _promptInstalar = null;
+function esIOS(){ return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream; }
+function yaInstalada(){ return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+function mostrarBotonInstalar(mostrar){ const b=document.getElementById('btn-instalar'); if(b) b.style.display = mostrar ? 'inline-flex' : 'none'; }
+window.addEventListener('beforeinstallprompt', function(e){
+  e.preventDefault();
+  _promptInstalar = e;
+  if(!yaInstalada()) mostrarBotonInstalar(true);
+});
+window.addEventListener('appinstalled', function(){
+  _promptInstalar = null;
+  mostrarBotonInstalar(false);
+});
+function instalarApp(){
+  if(_promptInstalar){
+    _promptInstalar.prompt();
+    _promptInstalar.userChoice.finally(function(){ _promptInstalar=null; mostrarBotonInstalar(false); });
+    return;
+  }
+  var pasos;
+  if(esIOS()){
+    pasos = '<ol style="margin:10px 0 0 18px;line-height:1.7;font-size:14px">'+
+      '<li>Toca el botón <b>Compartir</b> (el cuadro con la flecha hacia arriba, abajo en Safari).</li>'+
+      '<li>Baja y toca <b>“Agregar a inicio”</b> / <b>“Añadir a pantalla de inicio”</b>.</li>'+
+      '<li>Toca <b>Agregar</b>. Ya tendrás el ícono del hotel en tu teléfono.</li></ol>';
+  } else {
+    pasos = '<ol style="margin:10px 0 0 18px;line-height:1.7;font-size:14px">'+
+      '<li>En la barra de direcciones, arriba a la derecha, busca el ícono de <b>instalar</b> (una pantallita con una flecha) o abre el menú <b>⋮</b>.</li>'+
+      '<li>Elige <b>“Instalar Gestión Hotel Laja Real”</b> o <b>“Instalar aplicación”</b>.</li>'+
+      '<li>Confirma. La app quedará en tu escritorio o pantalla de inicio.</li></ol>'+
+      '<p style="font-size:12.5px;color:#667;margin-top:10px">Nota: debes abrir la página desde su enlace de internet (no desde un archivo), y con el candado de seguridad (https).</p>';
+  }
+  showModal('<div style="max-width:460px"><div class="section-title" style="font-size:16px">⬇️ Instalar la app</div>'+
+    '<p style="font-size:14px;color:#44526a">Puedes dejar el Hotel Laja Real como una aplicación en tu equipo o teléfono:</p>'+
+    pasos+
+    '<div style="text-align:right;margin-top:16px"><button class="btn-primary" onclick="cerrarModal()">Entendido</button></div></div>');
+}
+if('serviceWorker' in navigator){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('sw.js').catch(function(){ /* sin service worker: la app funciona igual */ });
+  });
+  // En iPhone no existe beforeinstallprompt: mostramos el botón con instrucciones.
+  if(esIOS() && !yaInstalada()) mostrarBotonInstalar(true);
 }
 
 async function bootstrap(){
