@@ -495,13 +495,29 @@ function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').repla
 /* ====== RECEPCIÓN ====== */
 let recepView='mapa';
 let habFiltroTipo='';
+let habFiltroNum='';
+let habSoloDisp=false;
 function setHabFiltroTipo(v){ habFiltroTipo = v || ''; render(); }
+function setHabFiltroNum(v){ habFiltroNum=(v||'').replace(/[^0-9]/g,''); render(); const e=document.getElementById('hab-buscar-num'); if(e){ e.focus(); const val=e.value; e.value=''; e.value=val; } }
+function setHabSoloDisp(v){ habSoloDisp=!!v; render(); }
+function limpiarFiltrosHab(){ habFiltroTipo=''; habFiltroNum=''; habSoloDisp=false; render(); }
+function habPasaFiltro(r){
+  if(habFiltroTipo && r.tipo!==habFiltroTipo) return false;
+  if(habSoloDisp && r.estado!=='libre') return false;
+  if(habFiltroNum && String(r.num).indexOf(habFiltroNum)<0) return false;
+  return true;
+}
 function filtroTipoBar(){
   const ts=getTipos();
-  let h='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0 14px">';
-  h+='<span style="font-size:13px;color:#55637a;font-weight:600">Buscar por tipo:</span>';
-  h+='<select onchange="setHabFiltroTipo(this.value)" style="max-width:220px"><option value="">Todos los tipos</option>'+ts.map(t=>'<option'+(t===habFiltroTipo?' selected':'')+'>'+esc(t)+'</option>').join('')+'</select>';
-  if(habFiltroTipo){ const n=rooms().filter(r=>r.tipo===habFiltroTipo).length; h+='<span style="font-size:12.5px;color:#8893a5">'+n+' habitación(es) · <a href="#" onclick="setHabFiltroTipo(\'\');return false" style="color:var(--azul)">quitar filtro</a></span>'; }
+  let h='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:4px 0 14px">';
+  h+='<span style="font-size:13px;color:#55637a;font-weight:600">Buscar:</span>';
+  h+='<input id="hab-buscar-num" value="'+escA(habFiltroNum)+'" oninput="setHabFiltroNum(this.value)" placeholder="N° de habitación" inputmode="numeric" style="max-width:150px;margin-top:0">';
+  h+='<select onchange="setHabFiltroTipo(this.value)" style="max-width:200px;margin-top:0"><option value="">Todos los tipos</option>'+ts.map(t=>'<option'+(t===habFiltroTipo?' selected':'')+'>'+esc(t)+'</option>').join('')+'</select>';
+  h+='<label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#55637a;font-weight:600;cursor:pointer"><input type="checkbox" onchange="setHabSoloDisp(this.checked)"'+(habSoloDisp?' checked':'')+' style="width:auto;margin:0"> Solo disponibles</label>';
+  if(habFiltroTipo||habFiltroNum||habSoloDisp){
+    const n=rooms().filter(habPasaFiltro).length;
+    h+='<span style="font-size:12.5px;color:#8893a5">'+n+' habitación(es) · <a href="#" onclick="limpiarFiltrosHab();return false" style="color:var(--azul)">quitar filtros</a></span>';
+  }
   h+='</div>';
   return h;
 }
@@ -568,16 +584,19 @@ function renderRecepcion(){
   html += legend();
   html += '<div style="display:flex;justify-content:flex-end;margin:0 0 4px"><button class="btn-gray" style="padding:6px 12px" onclick="imprimirListadoHabitaciones()">🖨️ Imprimir listado de habitaciones</button></div>';
   html += filtroTipoBar();
+  const _hayFiltroHab = habFiltroTipo||habFiltroNum||habSoloDisp;
+  let _mostradasHab = 0;
   pisos().forEach(p=>{
-    const list = rooms().filter(r=>r.piso===p && (!habFiltroTipo || r.tipo===habFiltroTipo));
-    if(habFiltroTipo && list.length===0) return;
+    const list = rooms().filter(r=>r.piso===p && habPasaFiltro(r));
+    if(_hayFiltroHab && list.length===0) return;
+    _mostradasHab += list.length;
     html += '<div class="floor"><h3>Piso '+p+'</h3><div class="rooms">';
     list.forEach(r=>{
       html += roomCard(r);
     });
     html += '</div></div>';
   });
-  if(habFiltroTipo && rooms().filter(r=>r.tipo===habFiltroTipo).length===0){ html += '<div class="empty">No hay habitaciones del tipo "'+esc(habFiltroTipo)+'".</div>'; }
+  if(_hayFiltroHab && _mostradasHab===0){ html += '<div class="empty">No hay habitaciones que coincidan con la búsqueda.</div>'; }
   c.innerHTML = html;
 }
 function roomCard(r){
@@ -1642,14 +1661,17 @@ function renderAdmin(){
     html += '<div class="stat" style="border-left-color:var(--rojo);margin-bottom:18px"><div class="n">'+reps.length+'</div><div class="l">Reportes de mantenimiento pendientes</div></div>';
     html += legend();
     html += filtroTipoBar();
+    const _hayFiltroHab2 = habFiltroTipo||habFiltroNum||habSoloDisp;
+    let _mostradasHab2 = 0;
     for(const p of pisos()){
-      const list = rooms().filter(r=>r.piso===p && (!habFiltroTipo || r.tipo===habFiltroTipo));
-      if(habFiltroTipo && list.length===0) continue;
+      const list = rooms().filter(r=>r.piso===p && habPasaFiltro(r));
+      if(_hayFiltroHab2 && list.length===0) continue;
+      _mostradasHab2 += list.length;
       html += '<div class="floor"><h3>Piso '+p+'</h3><div class="rooms">';
       list.forEach(r=>{ const e=ESTADOS[r.estado]; html+='<div class="room '+e.c+'"><div class="num">'+r.num+'</div><div class="st">'+e.t+'</div><div class="st" style="opacity:.8;font-size:9.5px">'+esc(r.tipo||'')+'</div></div>'; });
       html += '</div></div>';
     }
-    if(habFiltroTipo && rooms().filter(r=>r.tipo===habFiltroTipo).length===0){ html += '<div class="empty">No hay habitaciones del tipo "'+esc(habFiltroTipo)+'".</div>'; }
+    if(_hayFiltroHab2 && _mostradasHab2===0){ html += '<div class="empty">No hay habitaciones que coincidan con la búsqueda.</div>'; }
     html += renderOcupacionTipo();
   } else if(adminTab==='usuarios'){
     html += renderUsuarios();
@@ -2078,7 +2100,7 @@ function aplicarBulkEstado(){
   if(ocupadas.length) setTimeout(function(){ alert('Listo. '+ocupadas.length+' habitación(es) ocupada(s) no se cambiaron.'); }, 100);
 }
 function imprimirListadoHabitaciones(){
-  const lista=rooms().filter(r=>!habFiltroTipo || r.tipo===habFiltroTipo)
+  const lista=rooms().filter(habPasaFiltro)
     .slice().sort((a,b)=>(a.piso-b.piso)||(a.num-b.num));
   if(!lista.length){ alert('No hay habitaciones para imprimir.'); return; }
   const _c=impConfig();
@@ -2093,7 +2115,7 @@ function imprimirListadoHabitaciones(){
     if(_c.colEstado) f+='<td>'+ESTADOS[r.estado].t+'</td>';
     filas+='<tr>'+f+'</tr>';
   });
-  const titFiltro = habFiltroTipo ? (' — tipo: '+esc(habFiltroTipo)) : '';
+  const titFiltro = (habFiltroTipo?(' — tipo: '+esc(habFiltroTipo)):'')+(habSoloDisp?' — solo disponibles':'')+(habFiltroNum?(' — n° contiene "'+esc(habFiltroNum)+'"'):'');
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Listado de habitaciones</title>';
   html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}';
   html+='h1{font-size:20px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 14px}';
