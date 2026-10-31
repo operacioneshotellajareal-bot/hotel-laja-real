@@ -158,7 +158,7 @@ const SB_APP_EMAIL = 'operador@hotellajareal.com';
 const SB_APP_PASS  = 'LajaReal2026-Caja';
 /* Cajas de datos que se comparten entre todos los equipos.
    OJO: 'session' NO se comparte (cada equipo inicia sesión aparte). */
-const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas'];
+const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos'];
 
 /* ====== ALMACENAMIENTO (local + nube) ====== */
 const DB = {
@@ -561,6 +561,7 @@ function renderRecepcion(){
   let tabs = recepTab('mapa','Mapa de habitaciones')+recepTab('reservas','Reservas')+recepTab('caja','Caja / Arqueo');
   if(verReporte) tabs += recepTab('reportes','Reporte de pagos');
   tabs += recepTab('clientes','Clientes')+recepTab('kardex','Kardex / Turno');
+  tabs += recepTab('promociones','Promociones');
   if(verGestionHab) tabs += recepTab('habitaciones','Habitaciones');
   if(verOcup) tabs += recepTab('ocupacion','Ocupación');
   if(verTasa) tabs += recepTab('tasa','Tasa Bs/$');
@@ -583,6 +584,7 @@ function renderRecepcion(){
   if(recepView==='tasa'){ c.innerHTML = html + renderTasa(); return; }
   if(recepView==='clientes'){ c.innerHTML = html + renderClientes(); return; }
   if(recepView==='kardex'){ c.innerHTML = html + renderKardex(); return; }
+  if(recepView==='promociones'){ c.innerHTML = html + renderPromos(); return; }
   html += statsBar();
   html += avisoLlegadasPendientes();
   if(puede('verResumenOcupacion')) html += statsNegocio(true);
@@ -1658,7 +1660,7 @@ function renderAdmin(){
   const c = document.getElementById('content');
   let html = '<div class="section-title">Panel de Administración</div>';
   html += '<div class="tabs">'+
-    tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('reservas','Reservas')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','Reporte de pagos')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div>';
+    tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('reservas','Reservas')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','Reporte de pagos')+tabBtn('promociones','Promociones')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div>';
   if(adminTab==='resumen'){
     html += statsBar();
     html += statsNegocio();
@@ -1698,6 +1700,8 @@ function renderAdmin(){
     html += renderCaja();
   } else if(adminTab==='reportes'){
     html += renderReportePagos();
+  } else if(adminTab==='promociones'){
+    html += renderPromos();
   } else {
     html += '<div style="background:#fff;padding:20px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:18px">';
     html += '<div class="section-title" style="font-size:15px;margin-top:0">Respaldo de la base de datos</div>';
@@ -2294,6 +2298,72 @@ async function actualizarTasaBCV(){
     msg.innerText = 'No se pudo conectar con el BCV. Verifica tu internet o fija la tasa a mano.';
   }
 }
+
+/* ====== PROMOCIONES (editable por Master y Supervisor) ====== */
+function getPromos(){ return DB.get('promos', []); }
+function savePromos(a){ DB.set('promos', a); }
+function puedeEditarPromos(){ const r=session().rol; return esMaster(r) || r==='supervisor'; }
+function renderPromos(){
+  const editar = puedeEditarPromos();
+  const promos = getPromos();
+  let h='<div style="background:#fff;padding:20px;border-radius:12px;max-width:720px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:16px">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="section-title" style="font-size:16px;margin:0">🎁 Promociones</div>';
+  if(editar) h+='<button class="btn-green" style="padding:8px 14px" onclick="promoNuevoModal()">+ Nueva promoción</button>';
+  h+='</div>';
+  h+='<p style="font-size:12.5px;color:#8893a5;margin:8px 0 0;line-height:1.6">'+(editar?'Crea y edita las promociones del hotel. Las que estén <b>activas</b> las ve todo el equipo para ofrecerlas a los huéspedes.':'Promociones vigentes del hotel para ofrecer a los huéspedes.')+'</p>';
+  h+='</div>';
+  const lista = editar ? promos : promos.filter(p=>p.activa!==false);
+  if(!lista.length){
+    h+='<div class="empty">'+(editar?'Aún no has creado promociones. Toca “+ Nueva promoción” para empezar.':'No hay promociones activas en este momento.')+'</div>';
+    return h;
+  }
+  lista.forEach(p=>{
+    const act = p.activa!==false;
+    h+='<div style="background:#fff;padding:16px 18px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:12px;border-left:5px solid '+(act?'var(--verde)':'#c7d0dd')+'">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">';
+    h+='<div style="flex:1;min-width:200px"><div style="font-weight:800;color:var(--azul);font-size:16px">'+esc(p.titulo||'(sin título)')+(act?'':' <span style="font-size:11px;color:#8893a5;font-weight:600">· inactiva</span>')+'</div>';
+    if(p.detalle) h+='<div style="font-size:13.5px;color:#44526a;margin-top:4px;line-height:1.55;white-space:pre-wrap">'+esc(p.detalle)+'</div>';
+    h+='</div>';
+    if(editar){
+      h+='<div style="display:flex;gap:6px;flex-wrap:wrap">';
+      h+='<button class="btn-ghost" style="padding:6px 10px;font-size:12.5px" onclick="promoEditarModal(\''+p.id+'\')">✏️ Editar</button>';
+      h+='<button class="'+(act?'btn-gray':'btn-green')+'" style="padding:6px 10px;font-size:12.5px" onclick="togglePromo(\''+p.id+'\')">'+(act?'Desactivar':'Activar')+'</button>';
+      h+='<button class="btn-red" style="padding:6px 10px;font-size:12.5px" onclick="eliminarPromo(\''+p.id+'\')">Eliminar</button>';
+      h+='</div>';
+    }
+    h+='</div></div>';
+  });
+  return h;
+}
+function promoNuevoModal(){
+  showModal('<div style="max-width:460px"><h2>Nueva promoción</h2>'+
+    '<div class="field"><label>Título</label><input id="promo-tit" placeholder="ej: Plan Cama + Desayuno"></div>'+
+    '<div class="field"><label>Descripción / condiciones</label><textarea id="promo-det" rows="4" placeholder="ej: Habitación matrimonial con desayuno para 2 personas. Válido de lunes a jueves."></textarea></div>'+
+    '<div class="actions" style="margin-top:12px"><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button><button class="btn-green" onclick="guardarPromoNuevo()">Guardar promoción</button></div></div>');
+}
+function guardarPromoNuevo(){
+  const t=document.getElementById('promo-tit').value.trim();
+  if(!t){ alert('Escribe al menos el título de la promoción.'); return; }
+  const d=document.getElementById('promo-det').value.trim();
+  const a=getPromos(); a.push({id:'promo'+Date.now(), titulo:t, detalle:d, activa:true, creado:new Date().toISOString()});
+  savePromos(a); cerrarModal(); render();
+}
+function promoEditarModal(id){
+  const p=getPromos().find(x=>x.id===id); if(!p) return;
+  showModal('<div style="max-width:460px"><h2>Editar promoción</h2>'+
+    '<div class="field"><label>Título</label><input id="promo-tit" value="'+escA(p.titulo||'')+'"></div>'+
+    '<div class="field"><label>Descripción / condiciones</label><textarea id="promo-det" rows="4">'+esc(p.detalle||'')+'</textarea></div>'+
+    '<div class="actions" style="margin-top:12px"><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button><button class="btn-green" onclick="guardarPromoEdit(\''+id+'\')">Guardar cambios</button></div></div>');
+}
+function guardarPromoEdit(id){
+  const t=document.getElementById('promo-tit').value.trim();
+  if(!t){ alert('Escribe al menos el título de la promoción.'); return; }
+  const d=document.getElementById('promo-det').value.trim();
+  const a=getPromos(); const i=a.findIndex(x=>x.id===id); if(i<0) return;
+  a[i].titulo=t; a[i].detalle=d; savePromos(a); cerrarModal(); render();
+}
+function togglePromo(id){ const a=getPromos(); const i=a.findIndex(x=>x.id===id); if(i<0) return; a[i].activa=(a[i].activa===false); savePromos(a); render(); }
+function eliminarPromo(id){ if(!confirm('¿Eliminar esta promoción?')) return; const a=getPromos().filter(x=>x.id!==id); savePromos(a); render(); }
 
 /* ====== CAJA / ARQUEO DIARIO ====== */
 let cajaFecha = diaKey();
