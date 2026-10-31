@@ -651,9 +651,9 @@ function avisoSinPagar(){
 function statsBar(){
   const defs = [['libre','Libres','var(--verde)'],['ocupada','Ocupadas','var(--rojo)'],
     ['sucia','Por limpiar','var(--naranja)'],['mantenimiento','Mantenim.','var(--gris)']];
-  let h = '<div class="stats">';
-  defs.forEach(d=>{ h += '<div class="stat" style="border-left-color:'+d[2]+'"><div class="n">'+countBy(d[0])+'</div><div class="l">'+d[1]+'</div></div>'; });
-  h += '<div class="stat" style="border-left-color:var(--azul2)"><div class="n">'+rooms().length+'</div><div class="l">Total hab.</div></div>';
+  let h = '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px">';
+  defs.forEach(d=>{ h += '<span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #e4e9f2;border-radius:999px;padding:4px 12px;font-size:13px;color:#44526a;white-space:nowrap"><span style="width:9px;height:9px;border-radius:50%;background:'+d[2]+'"></span>'+d[1]+' <b style="color:#1c2430">'+countBy(d[0])+'</b></span>'; });
+  h += '<span style="display:inline-flex;align-items:center;gap:6px;background:#eef6ff;border:1px solid #cfe0f5;border-radius:999px;padding:4px 12px;font-size:13px;color:#2a4a73;white-space:nowrap">Total <b>'+rooms().length+'</b></span>';
   h += '</div>';
   return h;
 }
@@ -985,6 +985,7 @@ function guardarReserva(loc){
 }
 function habitacionesLibres(){ return rooms().filter(r=>r.estado==='libre'); }
 function checkinReservaModal(loc){
+  if(guardTurno()) return;
   const r=reservas().find(x=>x.loc===loc); if(!r){ alert('No se encontró la reserva.'); return; }
   const libres=habitacionesLibres();
   if(libres.length===0){ alert('No hay habitaciones libres en este momento.'); return; }
@@ -1008,6 +1009,7 @@ function checkinReservaModal(loc){
   showModal(b);
 }
 function confirmarCheckinReserva(loc){
+  if(guardTurno()) return;
   const list=reservas(); const r=list.find(x=>x.loc===loc); if(!r){ alert('No se encontró la reserva.'); return; }
   const num=parseInt(document.getElementById('cr-hab').value);
   const hab=findRoom(num);
@@ -1050,6 +1052,7 @@ function eliminarReserva(loc){
 /* ====== MODAL HABITACIÓN (recepción) ====== */
 function abrirHab(num){
   const r = findRoom(num);
+  if(r.estado==='libre' && guardTurno()) return;
   const e = ESTADOS[r.estado];
   let body = '<button class="close" onclick="cerrarModal()">×</button>';
   body += '<h2>Habitación '+r.num+'</h2>';
@@ -1229,6 +1232,7 @@ function acompDe(o){
 function renderAcompCheckin(){ pintarAcomp('m','m-acomp-box','m-personas'); }
 function toggleMultiHab(){ const chk=document.getElementById('m-multi'); const box=document.getElementById('m-multi-box'); if(chk&&box) box.style.display=chk.checked?'block':'none'; if(chk&&!chk.checked){ document.querySelectorAll('.m-extra:checked').forEach(e=>e.checked=false); const t=document.getElementById('m-multi-total'); if(t) t.innerHTML=''; } }
 function checkin(num){
+  if(guardTurno()) return;
   const h = document.getElementById('m-huesped').value.trim();
   if(!h){ alert('Escribe el nombre del huésped'); return; }
   const sel=document.getElementById('m-cliente');
@@ -1396,6 +1400,7 @@ function checkoutSinCobro(num){
   confirmCheckout(num);
 }
 function cobrarYCheckout(num){
+  if(guardTurno()) return;
   const r = findRoom(num);
   const noches = r.noches||1; const hosp = Number(r.tarifa||0)*noches;
   const pend = cargosDe(r).filter(c=>!c.pagado);
@@ -1472,6 +1477,7 @@ function quitarCargo(num,id){
   updateRoom(num,{cargos:cargos.filter(x=>x.id!==id)}); abrirHab(num);
 }
 function cobrarSinCheckoutModal(num){
+  if(guardTurno()) return;
   const r=findRoom(num); const pend=cargosDe(r).filter(c=>!c.pagado);
   let body='<button class="close" onclick="abrirHab('+num+')">×</button>';
   body+='<h2>Cobrar sin check-out · Hab. '+num+'</h2>';
@@ -1498,6 +1504,7 @@ function cobCalc(){
   pmSyncSingle('cob', t);
 }
 function cobrarSinCheckout(num){
+  if(guardTurno()) return;
   const r=findRoom(num); const ids=[]; let tot=0;
   document.querySelectorAll('.cob-chk').forEach(ch=>{ if(ch.checked){ ids.push(ch.value); tot+=Number(ch.getAttribute('data-m'))||0; } });
   const concepto=(document.getElementById('cob-concepto').value||'').trim();
@@ -2616,6 +2623,7 @@ function cobroGrupoDatos(numsStr){
   return { nums:nums, list:list, tot:tot, abo:abo, nochesTot:nochesTot, saldo:Math.max(0,tot-abo), porHab:porHab };
 }
 function cobrarCuentaModal(numsStr){
+  if(guardTurno()) return;
   const g=cobroGrupoDatos(numsStr); if(!g.list.length){ alert('No hay habitaciones para cobrar.'); return; }
   if(g.saldo<=0.009){ alert('Esta cuenta ya está totalmente pagada. No hay saldo por cobrar.'); return; }
   const r0=g.list[0]; const multi=g.list.length>1;
@@ -2636,6 +2644,7 @@ function cobrarCuentaModal(numsStr){
   showModal(body); pmReset('grp', g.saldo);
 }
 function cobrarCuentaConfirm(numsStr){
+  if(guardTurno()) return;
   const g=cobroGrupoDatos(numsStr); if(!g.list.length){ alert('No hay habitaciones para cobrar.'); return; }
   if(g.saldo<=0.009){ alert('Esta cuenta ya está totalmente pagada.'); return; }
   const r0=g.list[0]; const c=clienteDeHab(r0); const cr=c?clienteResumen(c):null; const now=new Date();
@@ -2865,6 +2874,7 @@ function renderCaja(){
   return h;
 }
 function pagoManualModal(){
+  if(guardTurno()) return;
   let body = '<button class="close" onclick="cerrarModal()">×</button><h2>Registrar cobro manual</h2>';
   body += '<div class="field"><label>Concepto</label><input id="pm-concepto" placeholder="ej: consumo frigobar, lavandería"></div>';
   body += '<div class="field"><label>Cargar a la cuenta de un cliente <span style="color:#8893a5;font-weight:400;font-size:12px">(opcional)</span></label><select id="pm-cliente"><option value="">— Sin cliente (cobro suelto) —</option>'+clienteCheckinOptions()+'</select></div>';
@@ -2881,6 +2891,7 @@ function pmCalcManual(){
   pmSyncSingle('pm', usd);
 }
 function guardarPagoManual(){
+  if(guardTurno()) return;
   const concepto = document.getElementById('pm-concepto').value.trim();
   const monto = parseFloat(document.getElementById('pm-monto').value)||0;
   const moneda = document.getElementById('pm-moneda').value;
@@ -3653,6 +3664,21 @@ function abrirTurno(){
   t.unshift({ id:'t'+Date.now(), usuario:s.user, nombre:s.nombre, inicio:new Date().toISOString(), fin:null, abierto:true });
   saveTurnos(t); render();
 }
+function requiereTurnoAbierto(){
+  const s=session(); if(!s) return false;
+  if(s.rol!=='recepcion') return false;
+  return !turnoActivo();
+}
+function guardTurno(){ if(requiereTurnoAbierto()){ pedirAbrirTurno(); return true; } return false; }
+function pedirAbrirTurno(){
+  let body='<button class="close" onclick="cerrarModal()">×</button>';
+  body+='<h2>🕐 Primero abre tu turno</h2>';
+  body+='<div style="font-size:14px;color:#44526a;line-height:1.6;margin:8px 0 6px">Para registrar <b>ventas y cobros</b> necesitas tener tu <b>turno abierto</b>. Así cada movimiento queda a tu nombre.</div>';
+  body+='<div style="font-size:13px;color:#8893a5;margin-bottom:4px">Al terminar tu jornada, recuerda cerrarlo desde la pestaña Kardex.</div>';
+  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="abrirTurnoDesdeAviso()">Abrir mi turno ahora</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  showModal(body);
+}
+function abrirTurnoDesdeAviso(){ cerrarModal(); abrirTurno(); }
 function cerrarTurno(){
   const t=turnos(); const a=t.find(x=>x.abierto); if(!a){ alert('No hay ningún turno abierto.'); return; }
   if(!confirm('¿Cerrar el turno de '+a.nombre+'? Los próximos movimientos ya no se registrarán en él. Además, las cuentas que ya estén pagadas se quitarán de la pestaña Cobrar.')) return;
