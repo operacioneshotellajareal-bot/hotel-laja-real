@@ -44,6 +44,17 @@ label{font-size:13px;font-weight:600;color:#44526a;}
 .topbar .brand{font-size:17px;font-weight:700;}
 .topbar .right{display:flex;align-items:center;gap:14px;font-size:13px;}
 .role-badge{background:rgba(255,255,255,.18);padding:5px 12px;border-radius:20px;font-weight:600;}
+.notif-wrap{position:relative;}
+.bell{background:rgba(255,255,255,.18);border:none;color:#fff;cursor:pointer;font-size:16px;line-height:1;padding:7px 11px;border-radius:20px;position:relative;}
+.bell:hover{background:rgba(255,255,255,.3);}
+.bell .cnt{position:absolute;top:-5px;right:-5px;background:#e53935;color:#fff;font-size:10px;font-weight:700;min-width:17px;height:17px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 3px;box-shadow:0 0 0 2px var(--azul);}
+.notif-panel{position:absolute;top:46px;right:0;width:330px;max-width:88vw;max-height:72vh;overflow:auto;background:#fff;color:#1c2430;border-radius:14px;box-shadow:0 10px 36px rgba(0,0,0,.28);z-index:60;padding:8px;}
+.notif-head{font-weight:700;font-size:14px;padding:8px 8px 4px;color:#0d3b66;}
+.notif-item{border-radius:11px;padding:11px 13px;margin:7px 4px;border:1px solid;}
+.notif-item .t{font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:7px;}
+.notif-item .d{font-size:12.5px;margin-top:4px;line-height:1.45;}
+.notif-item .a{margin-top:9px;}
+.notif-empty{padding:22px 10px;text-align:center;color:#8893a5;font-size:13px;}
 .content{max-width:1150px;margin:0 auto;padding:20px;}
 .section-title{font-size:19px;color:var(--azul);margin:6px 0 14px;font-weight:700;}
 /* STATS */
@@ -138,6 +149,10 @@ label{font-size:13px;font-weight:600;color:#44526a;}
     <div class="brand">🏨 Gestión Hotel</div>
     <div class="right">
       <button class="btn-orange" id="btn-instalar" style="display:none;padding:7px 12px;font-size:12.5px" onclick="instalarApp()">⬇️ Instalar app</button>
+      <div class="notif-wrap" id="notif-wrap" style="display:none">
+        <button class="bell" id="btn-notif" title="Notificaciones" onclick="toggleNotif(event)">🔔<span class="cnt" id="notif-count" style="display:none">0</span></button>
+        <div class="notif-panel" id="notif-panel" style="display:none" onclick="event.stopPropagation()"></div>
+      </div>
       <span id="who"></span>
       <span class="role-badge" id="role-badge"></span>
       <button class="btn-ghost" onclick="logout()">Salir</button>
@@ -161,7 +176,7 @@ const SB_APP_EMAIL = 'operador@hotellajareal.com';
 const SB_APP_PASS  = 'LajaReal2026-Caja';
 /* Cajas de datos que se comparten entre todos los equipos.
    OJO: 'session' NO se comparte (cada equipo inicia sesión aparte). */
-const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos'];
+const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos','forzarCierre'];
 
 /* ====== ALMACENAMIENTO (local + nube) ====== */
 const DB = {
@@ -295,10 +310,11 @@ const PERMISOS_CATALOGO=[
   ['gestionHab','Gestionar habitaciones, tipos y precios','Le da la pestaña “Habitaciones” para crear/editar habitaciones, tipos y precios base.'],
   ['verResumenOcupacion','Ver resumen de ocupación','Muestra en el Mapa de habitaciones el panel con el % de ocupación y cuántas habitaciones hay libres y ocupadas (sin montos de dinero).'],
   ['verOcupacionTipo','Ver ocupación por tipo de habitación','Muestra en el Mapa de habitaciones una tabla con cada tipo: cuántas habitaciones hay, ocupadas, libres y el % de ocupación (sin montos de dinero).'],
-  ['editarTasa','Modificar la tasa Bs/$','Le da la pestaña “Tasa Bs/$” para fijar la tasa a mano o traer la oficial del BCV.']
+  ['editarTasa','Modificar la tasa Bs/$','Le da la pestaña “Tasa Bs/$” para fijar la tasa a mano o traer la oficial del BCV.'],
+  ['verMantenimiento','Ver la pestaña de Mantenimiento','Muestra la pestaña “Mantenimiento” con los reportes de habitaciones en reparación y resueltos, y el botón para imprimir el reporte.']
 ];
 const ROLES_CONFIGURABLES=['recepcion','supervisor'];
-function permisosDefault(rol){ return {anularPagos:false, gestionHab:false, verReportePagos:true, verResumenOcupacion:(rol==='supervisor'), verOcupacionTipo:true, editarTasa:true}; }
+function permisosDefault(rol){ return {anularPagos:false, gestionHab:false, verReportePagos:true, verResumenOcupacion:(rol==='supervisor'), verOcupacionTipo:true, editarTasa:true, verMantenimiento:(rol==='supervisor')}; }
 function permisosDe(rol){ const p=DB.get('permisos',null); const sp=(p&&p[rol])?p[rol]:{}; return Object.assign(permisosDefault(rol), sp); }
 function setPermiso(rol,k,v){ const p=DB.get('permisos',{})||{}; if(!p[rol]) p[rol]={}; p[rol][k]=!!v; DB.set('permisos', p); }
 function puede(k){ const rol=session().rol; if(esMaster(rol)) return true; if(ROLES_CONFIGURABLES.indexOf(rol)>=0) return !!permisosDe(rol)[k]; return false; }
@@ -316,7 +332,7 @@ async function login(){
   // Traer el estado más reciente de la nube para saber quién está conectado
   try{ if(typeof CLOUD!=='undefined' && CLOUD.enabled){ await CLOUD.pullAll(); } }catch(e){}
   if(usuarioYaConectado(u)){ document.getElementById('login-err').innerText='Este usuario ya tiene una sesión abierta en otro equipo. Cierra la sesión allí o espera un momento e inténtalo de nuevo.'; return; }
-  DB.set('session', found);
+  DB.set('session', Object.assign({}, found, {loginTs:Date.now()}));
   document.getElementById('login-err').innerText='';
   document.getElementById('in-pass').value='';
   presenciaLatido();
@@ -359,6 +375,28 @@ function usuarioYaConectado(user){
   const now=Date.now(); const o=presenciaObj(); const my=deviceId();
   return Object.keys(o).some(k=>{ const e=o[k]; return e && e.user===user && e.deviceId!==my && e.ts && (now-e.ts)<40000; });
 }
+/* ---- Cierre de sesiones a distancia (lo ordena el Master) ---- */
+function revisarCierreForzado(){
+  const s=session(); if(!s) return;
+  const fc=DB.get('forzarCierre',{}); const mine=fc&&fc[deviceId()];
+  if(mine && (!s.loginTs || mine>s.loginTs)){ cerrarSesionForzada(); }
+}
+function cerrarSesionForzada(){
+  try{ presenciaSalir(); }catch(e){}
+  localStorage.removeItem('hotel_session');
+  alert('El administrador cerró tu sesión. Vuelve a iniciar sesión si lo necesitas.');
+  location.reload();
+}
+function cerrarSesionRemota(dev, nombre){
+  if(dev===deviceId()){ alert('Esa es tu propia sesión en este equipo. Para salir usa el botón “Salir” de arriba.'); return; }
+  if(!confirm('¿Cerrar la sesión de '+(nombre||'este equipo')+'?\n\nLa persona tendrá que iniciar sesión otra vez.')) return;
+  const fc=DB.get('forzarCierre',{})||{};
+  const lim=Date.now()-86400000; Object.keys(fc).forEach(k=>{ if(!fc[k]||fc[k]<lim) delete fc[k]; });
+  fc[dev]=Date.now(); DB.set('forzarCierre', fc);
+  const o=presenciaObj(); if(o[dev]){ delete o[dev]; DB.set('presencia', o); }
+  render();
+  alert('Listo. La sesión se cerrará en el otro equipo en unos segundos.');
+}
 let _presTimer=null;
 function iniciarPresencia(){
   presenciaLatido();
@@ -378,6 +416,7 @@ function openApp(){
   document.getElementById('who').innerText = s.nombre;
   document.getElementById('role-badge').innerText = ROLES[s.rol]||s.rol;
   iniciarPresencia();
+  revisarCierreForzado();
   render();
   avisarRespaldo();
 }
@@ -389,7 +428,69 @@ function render(){
   else if(rol==='housekeeping') renderHousekeeping();
   else if(rol==='mantenimiento') renderMantenimiento();
   else renderAdmin();
+  renderNotif();
 }
+/* ---- Centro de notificaciones (campanita desplegable) ---- */
+function notifItems(){
+  const items=[];
+  const s=session(); const rol=s?s.rol:'';
+  if(rol!=='recepcion' && rol!=='supervisor') return items;
+  // 1) Estado del turno
+  const ta=turnoActivo();
+  if(!ta){
+    items.push({c:'warn',icon:'⚠️',titulo:'No hay ningún turno abierto',texto:'Abre tu turno al empezar para que cada cobro y movimiento quede a tu nombre.',btn:'<button class="btn-green" style="padding:6px 12px" onclick="cerrarNotif();abrirTurno()">Abrir mi turno</button>'});
+  } else if(s && ta.usuario===s.user){
+    items.push({c:'ok',icon:'✅',titulo:'Tu turno está abierto',texto:'Abierto desde '+fechaHoraCorta(ta.inicio)+'. Recuerda cerrarlo al terminar.',btn:'<button class="btn-red" style="padding:6px 12px" onclick="cerrarNotif();cerrarTurno()">Cerrar turno</button>'});
+  } else {
+    items.push({c:'danger',icon:'⚠️',titulo:'Turno abierto por otra persona',texto:'Hay un turno abierto a nombre de '+esc(ta.nombre)+'. Pide que lo cierre antes de abrir el tuyo.',btn:''});
+  }
+  // 2) Habitaciones sin pagar
+  const sin=rooms().filter(r=>r.estado==='ocupada' && habSinPagar(r)).sort((a,b)=>a.num-b.num);
+  if(sin.length>0){
+    const urg=pasoHoraSalida(); let tot=0;
+    const chips=sin.map(r=>{ const sd=saldoDeHab(r); tot+=sd; return '<span style="display:inline-block;background:#fff;border:1px solid '+(urg?'#f1b5b5':'#f0d58a')+';border-radius:999px;padding:3px 9px;margin:4px 5px 0 0;font-size:12px;color:'+(urg?'#a23b3b':'#7a5b00')+';cursor:pointer" onclick="cerrarNotif();abrirHab('+r.num+')"><b>Hab. '+r.num+'</b> · debe '+fmtUSD(sd)+'</span>'; }).join('');
+    items.push({c:urg?'danger':'warn',icon:urg?'🔴':'💰',titulo:sin.length+' habitación(es) sin pagar',texto:'Total pendiente '+fmtUSD(tot)+'.'+(urg?' Ya pasó la hora de salida (12:00 m).':''),extra:chips,btn:'<button class="btn-green" style="padding:6px 12px" onclick="recepView=\'cobrar\';adminTab=\'cobrar\';cerrarNotif();render()">Ir a Cobrar</button>'});
+  }
+  // 3) Reservas / llegadas
+  const hoy=hoyISO(); const pend=reservas().filter(r=>r.estado==='pendiente');
+  const hoyList=pend.filter(r=>String(r.fechaEntrada||'')===hoy);
+  const atrasadas=pend.filter(r=>String(r.fechaEntrada||'') && String(r.fechaEntrada||'')<hoy);
+  if(hoyList.length>0 || atrasadas.length>0){
+    let t=[];
+    if(hoyList.length>0) t.push('Hoy esperas <b>'+hoyList.length+'</b> llegada'+(hoyList.length>1?'s':'')+' con reserva.');
+    if(atrasadas.length>0) t.push('Hay <b>'+atrasadas.length+'</b> reserva'+(atrasadas.length>1?'s':'')+' de días anteriores sin ingresar.');
+    const chips=hoyList.map(r=>{ const nom=((r.nombre||'')+' '+(r.apellido||'')).trim()||'Huésped'; return '<span style="display:inline-block;background:#fff;border:1px solid #d8c48a;border-radius:999px;padding:3px 9px;margin:4px 5px 0 0;font-size:12px;color:#7a5b00"><b style="font-family:monospace">'+esc(r.loc)+'</b> · '+esc(nom)+(r.tipoPreferido?(' · '+esc(r.tipoPreferido)):'')+'</span>'; }).join('');
+    items.push({c:'warn',icon:'🛎️',titulo:'Reservas por atender',texto:t.join(' '),extra:chips,btn:'<button class="btn-primary" style="padding:6px 12px" onclick="recepView=\'reservas\';adminTab=\'reservas\';cerrarNotif();render()">Ver reservas</button>'});
+  }
+  return items;
+}
+function notifColor(c){ return {warn:['#fff8e1','#f0d58a','#7a5b00'],danger:['#fdeeee','#f1b5b5','#a23b3b'],ok:['#e9f8ee','#9fdcb4','#1d6b38']}[c]||['#f4f6fa','#d9e0ea','#44526a']; }
+function renderNotif(){
+  const wrap=document.getElementById('notif-wrap');
+  const panel=document.getElementById('notif-panel');
+  const cnt=document.getElementById('notif-count');
+  if(!wrap||!panel||!cnt) return;
+  const s=session(); const rol=s?s.rol:'';
+  if(rol!=='recepcion' && rol!=='supervisor'){ wrap.style.display='none'; panel.style.display='none'; return; }
+  wrap.style.display='';
+  const items=notifItems();
+  const alertas=items.filter(i=>i.c!=='ok').length;
+  if(alertas>0){ cnt.style.display=''; cnt.innerText=alertas; } else { cnt.style.display='none'; }
+  let h='<div class="notif-head">🔔 Notificaciones'+(alertas>0?(' · '+alertas):'')+'</div>';
+  if(items.length===0){ h+='<div class="notif-empty">Todo en orden. No hay avisos por ahora. ✅</div>'; }
+  else items.forEach(it=>{ const col=notifColor(it.c);
+    h+='<div class="notif-item" style="background:'+col[0]+';border-color:'+col[1]+';color:'+col[2]+'">';
+    h+='<div class="t"><span>'+it.icon+'</span><span>'+it.titulo+'</span></div>';
+    h+='<div class="d">'+it.texto+'</div>';
+    if(it.extra) h+='<div style="margin-top:4px">'+it.extra+'</div>';
+    if(it.btn) h+='<div class="a">'+it.btn+'</div>';
+    h+='</div>';
+  });
+  panel.innerHTML=h;
+}
+function toggleNotif(e){ if(e){ e.stopPropagation(); } const p=document.getElementById('notif-panel'); if(!p) return; const abrir=(p.style.display!=='block'); p.style.display=abrir?'block':'none'; if(abrir){ setTimeout(function(){ document.addEventListener('click', cerrarNotifOut); },0); } else { document.removeEventListener('click', cerrarNotifOut); } }
+function cerrarNotif(){ const p=document.getElementById('notif-panel'); if(p) p.style.display='none'; document.removeEventListener('click', cerrarNotifOut); }
+function cerrarNotifOut(ev){ const w=document.getElementById('notif-wrap'); if(w && !w.contains(ev.target)) cerrarNotif(); }
 function rooms(){ return DB.get('rooms', []); }
 function saveRooms(r){ DB.set('rooms', r); }
 function findRoom(num){ return rooms().find(r=>r.num===num); }
@@ -559,12 +660,14 @@ function renderRecepcion(){
   const verGestionHab = esConfig ? _perm.gestionHab : false;
   const verOcup = puede('verOcupacionTipo');
   const verTasa = puede('editarTasa');
+  const verMant = puede('verMantenimiento');
   if(esConfig){ // evitar quedar en una pestaña sin permiso
     if(recepView==='reportes' && !verReporte) recepView='mapa';
     if(recepView==='habitaciones' && !verGestionHab) recepView='mapa';
   }
   if(recepView==='ocupacion' && !verOcup) recepView='mapa';
   if(recepView==='tasa' && !verTasa) recepView='mapa';
+  if(recepView==='mantenimiento' && !verMant) recepView='mapa';
   let tabs = recepTab('mapa','Mapa de habitaciones')+recepTab('reservas','Reservas')+recepTab('cobrar','Cobrar')+recepTab('caja','Caja / Arqueo');
   if(verReporte) tabs += recepTab('reportes','Reporte de pagos');
   tabs += recepTab('clientes','Clientes')+recepTab('kardex','Kardex / Turno');
@@ -572,17 +675,8 @@ function renderRecepcion(){
   if(verGestionHab) tabs += recepTab('habitaciones','Habitaciones');
   if(verOcup) tabs += recepTab('ocupacion','Ocupación');
   if(verTasa) tabs += recepTab('tasa','Tasa Bs/$');
+  if(verMant) tabs += recepTab('mantenimiento','Mantenimiento');
   html += '<div class="tabs">'+tabs+'</div>';
-  if(!turnoActivo()){
-    html += '<div style="background:#fff8e1;border:1px solid #f0d58a;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:220px;font-size:13.5px;color:#7a5b00">⚠️ <b>No hay ningún turno abierto.</b> Abre tu turno al empezar para que cada cobro y movimiento quede a tu nombre.</div><button class="btn-green" onclick="abrirTurno()">Abrir mi turno</button></div>';
-  } else {
-    const _ta=turnoActivo(); const _me=session();
-    if(_me && _ta.usuario===_me.user){
-      html += '<div style="background:#e9f8ee;border:1px solid #9fdcb4;border-radius:10px;padding:10px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:220px;font-size:13px;color:#1d6b38">✅ Tu turno está <b>abierto</b> desde '+fechaHoraCorta(_ta.inicio)+'. Recuerda cerrarlo al terminar.</div><button class="btn-red" style="padding:6px 12px" onclick="cerrarTurno()">Cerrar turno</button></div>';
-    } else {
-      html += '<div style="background:#fdeeee;border:1px solid #f1b5b5;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#a23b3b">⚠️ Hay un turno abierto a nombre de <b>'+esc(_ta.nombre)+'</b>. Pide que lo cierre antes de abrir el tuyo.</div>';
-    }
-  }
   if(recepView==='caja'){ c.innerHTML = html + renderCaja(); return; }
   if(recepView==='cobrar'){ c.innerHTML = html + renderCobrar(); cobrarPintar(); return; }
   if(recepView==='reservas'){ c.innerHTML = html + renderReservas(); return; }
@@ -593,9 +687,8 @@ function renderRecepcion(){
   if(recepView==='clientes'){ c.innerHTML = html + renderClientes(); return; }
   if(recepView==='kardex'){ c.innerHTML = html + renderKardex(); return; }
   if(recepView==='promociones'){ c.innerHTML = html + renderPromos(); return; }
+  if(recepView==='mantenimiento'){ c.innerHTML = html + '<div class="section-title" style="margin-top:4px">Mantenimiento · Reportes</div>' + mantenimientoBody(true); return; }
   html += statsBar();
-  html += avisoSinPagar();
-  html += avisoLlegadasPendientes();
   if(puede('verResumenOcupacion')) html += statsNegocio(true);
   html += legend();
   html += '<div style="display:flex;justify-content:flex-end;margin:0 0 4px"><button class="btn-gray" style="padding:6px 12px" onclick="imprimirListadoHabitaciones()">🖨️ Imprimir listado de habitaciones</button></div>';
@@ -1705,13 +1798,11 @@ function iniciarLimpieza(num){ updateRoom(num,{estado:'limpieza'}); render(); }
 function terminarLimpieza(num){ updateRoom(num,{estado:'libre',nota:''}); render(); }
 
 /* ====== MANTENIMIENTO ====== */
-function renderMantenimiento(){
-  const c = document.getElementById('content');
+function mantenimientoBody(puedeResolver){
   const reps = DB.get('reportes',[]);
   const pend = reps.filter(r=>r.estado!=='resuelto');
   const res = reps.filter(r=>r.estado==='resuelto');
-  let html = '<div class="section-title">Mantenimiento · Reportes</div>';
-  html += '<div class="stats"><div class="stat" style="border-left-color:var(--rojo)"><div class="n">'+pend.length+'</div><div class="l">Pendientes</div></div>';
+  let html = '<div class="stats"><div class="stat" style="border-left-color:var(--rojo)"><div class="n">'+pend.length+'</div><div class="l">En reparación</div></div>';
   html += '<div class="stat" style="border-left-color:var(--verde)"><div class="n">'+res.length+'</div><div class="l">Resueltos</div></div></div>';
   html += '<button class="btn-primary" style="margin-bottom:16px" onclick="imprimirReporteMantenimiento()">🖨️ Imprimir reporte (en reparación y resueltos)</button>';
   if(pend.length===0){ html += '<div class="empty">🔧 No hay reportes pendientes.</div>'; }
@@ -1719,7 +1810,8 @@ function renderMantenimiento(){
     html += '<div class="task-list">';
     pend.forEach(r=>{
       html += '<div class="task"><div class="info"><b>Hab. '+r.hab+'</b><span class="prio prio-'+r.prio+'">'+r.prio.toUpperCase()+'</span><div class="meta">'+esc(r.desc)+'<br>Reportado por '+esc(r.por)+' · '+r.fecha+'</div></div><div class="acts">';
-      html += '<button class="btn-green" onclick="resolverReporte('+r.id+')">Marcar resuelto</button></div></div>';
+      if(puedeResolver) html += '<button class="btn-green" onclick="resolverReporte('+r.id+')">Marcar resuelto</button>';
+      html += '</div></div>';
     });
     html += '</div>';
   }
@@ -1730,6 +1822,12 @@ function renderMantenimiento(){
     });
     html += '</div>';
   }
+  return html;
+}
+function renderMantenimiento(){
+  const c = document.getElementById('content');
+  let html = '<div class="section-title">Mantenimiento · Reportes</div>';
+  html += mantenimientoBody(true);
   c.innerHTML = html;
 }
 function resolverReporte(id){
@@ -1773,13 +1871,13 @@ function renderAdmin(){
   const c = document.getElementById('content');
   let html = '<div class="section-title">Panel de Administración</div>';
   html += '<div class="tabs">'+
-    tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('reservas','Reservas')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+tabBtn('cobrar','Cobrar')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','Reporte de pagos')+tabBtn('promociones','Promociones')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div>';
+    tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('reservas','Reservas')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+tabBtn('cobrar','Cobrar')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','Reporte de pagos')+tabBtn('promociones','Promociones')+tabBtn('mantenimiento','Mantenimiento')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div>';
   if(adminTab==='resumen'){
     html += statsBar();
     html += statsNegocio();
     const reps = DB.get('reportes',[]).filter(r=>r.estado!=='resuelto');
     html += '<div class="stat" style="border-left-color:var(--rojo);margin-bottom:18px"><div class="n">'+reps.length+'</div><div class="l">Reportes de mantenimiento pendientes</div></div>';
-    html += '<button class="btn-gray" style="margin:-6px 0 18px" onclick="imprimirReporteMantenimiento()">🖨️ Reporte de mantenimiento (en reparación y resueltos)</button>';
+    html += '<button class="btn-gray" style="margin:-6px 0 18px" onclick="adminTab=\'mantenimiento\';render()">🔧 Ir a Mantenimiento</button>';
     html += legend();
     html += filtroTipoBar();
     const _hayFiltroHab2 = habFiltroTipo||habFiltroNum||habSoloDisp;
@@ -1818,6 +1916,8 @@ function renderAdmin(){
     html += renderReportePagos();
   } else if(adminTab==='promociones'){
     html += renderPromos();
+  } else if(adminTab==='mantenimiento'){
+    html += '<div class="section-title" style="font-size:15px;margin-top:0">Mantenimiento · Reportes</div>' + mantenimientoBody(true);
   } else {
     html += '<div style="background:#fff;padding:20px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:18px">';
     html += '<div class="section-title" style="font-size:15px;margin-top:0">Respaldo de la base de datos</div>';
@@ -1873,9 +1973,9 @@ function renderEnLinea(){
   if(act.length===0){ h+='<div style="color:#8893a5;font-size:13px">Nadie conectado en este momento.</div>'; }
   else{
     act.sort((a,b)=>(b.ts||0)-(a.ts||0));
-    act.forEach(e=>{ const secs=Math.round((Date.now()-(e.ts||0))/1000); h+='<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f0f2f6"><div style="width:10px;height:10px;border-radius:50%;background:var(--verde)"></div><div style="flex:1"><b>'+esc(e.nombre||e.user||'')+'</b> <span style="font-size:12px;color:#8893a5">'+(ROLES[e.rol]||e.rol||'')+'</span></div><div style="font-size:11.5px;color:#8893a5">activo hace '+(secs<5?'unos segundos':secs+'s')+'</div></div>'; });
+    act.forEach(e=>{ const secs=Math.round((Date.now()-(e.ts||0))/1000); const esYo=(e.deviceId===deviceId()); h+='<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f0f2f6;flex-wrap:wrap"><div style="width:10px;height:10px;border-radius:50%;background:var(--verde)"></div><div style="flex:1;min-width:140px"><b>'+esc(e.nombre||e.user||'')+'</b> <span style="font-size:12px;color:#8893a5">'+(ROLES[e.rol]||e.rol||'')+'</span></div><div style="font-size:11.5px;color:#8893a5">activo hace '+(secs<5?'unos segundos':secs+'s')+'</div>'+(esYo?'<span style="font-size:11px;color:var(--verde);font-weight:700">este equipo</span>':'<button class="btn-red" style="padding:4px 10px;font-size:12px" onclick="cerrarSesionRemota(\''+esc(e.deviceId)+'\',\''+escA(e.nombre||e.user||'')+'\')">Cerrar sesión</button>')+'</div>'; });
   }
-  h+='<div style="font-size:11.5px;color:#8893a5;margin-top:8px">Se actualiza solo cada pocos segundos. Cada equipo cuenta como una sesión.</div></div>';
+  h+='<div style="font-size:11.5px;color:#8893a5;margin-top:8px">Se actualiza solo cada pocos segundos. Cada equipo cuenta como una sesión. Al cerrar una sesión a distancia, ese equipo saldrá en unos segundos.</div></div>';
   return h;
 }
 function renderPermisosRoles(){
@@ -4061,6 +4161,7 @@ function startPolling(){
       const antes = {};
       SYNC_KEYS.forEach(k=> antes[k]=localStorage.getItem('hotel_'+k));
       await CLOUD.pullAll();
+      revisarCierreForzado();
       let cambio=false;
       SYNC_KEYS.forEach(k=>{ if(antes[k]!==localStorage.getItem('hotel_'+k)) cambio=true; });
       if(cambio && !hayFormularioActivo()){
