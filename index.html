@@ -1713,6 +1713,7 @@ function renderMantenimiento(){
   let html = '<div class="section-title">Mantenimiento · Reportes</div>';
   html += '<div class="stats"><div class="stat" style="border-left-color:var(--rojo)"><div class="n">'+pend.length+'</div><div class="l">Pendientes</div></div>';
   html += '<div class="stat" style="border-left-color:var(--verde)"><div class="n">'+res.length+'</div><div class="l">Resueltos</div></div></div>';
+  html += '<button class="btn-primary" style="margin-bottom:16px" onclick="imprimirReporteMantenimiento()">🖨️ Imprimir reporte (en reparación y resueltos)</button>';
   if(pend.length===0){ html += '<div class="empty">🔧 No hay reportes pendientes.</div>'; }
   else {
     html += '<div class="task-list">';
@@ -1736,14 +1737,37 @@ function resolverReporte(id){
   const i = reps.findIndex(r=>r.id===id);
   if(i<0) return;
   reps[i].estado='resuelto';
+  reps[i].resueltoFecha=new Date().toLocaleString('es-VE');
+  reps[i].resueltoPor=(session()&&session().nombre)||'';
   DB.set('reportes',reps);
   // la habitación reparada pasa a 'por limpiar' antes de volver a venderse
   const r = findRoom(reps[i].hab);
   if(r && r.estado==='mantenimiento') updateRoom(reps[i].hab,{estado:'sucia',nota:''});
   render();
 }
-
-/* ====== ADMIN ====== */
+function imprimirReporteMantenimiento(){
+  const reps = DB.get('reportes',[]);
+  const pend = reps.filter(r=>r.estado!=='resuelto');
+  const res = reps.filter(r=>r.estado==='resuelto');
+  const prioTxt=function(p){ p=(p||'').toLowerCase(); if(p==='alta')return 'Alta'; if(p==='media')return 'Media'; if(p==='baja')return 'Baja'; return p?esc(p):'—'; };
+  let filasP=''; pend.forEach(r=>{ filasP+='<tr><td><b>'+esc(String(r.hab))+'</b></td><td>'+prioTxt(r.prio)+'</td><td>'+esc(r.desc||'—')+'</td><td>'+esc(r.por||'—')+'</td><td>'+esc(r.fecha||'—')+'</td></tr>'; });
+  if(!filasP) filasP='<tr><td colspan="5" class="c" style="color:#888;padding:16px">No hay habitaciones en reparación</td></tr>';
+  let filasR=''; res.forEach(r=>{ filasR+='<tr><td><b>'+esc(String(r.hab))+'</b></td><td>'+prioTxt(r.prio)+'</td><td>'+esc(r.desc||'—')+'</td><td>'+esc(r.por||'—')+'</td><td>'+esc(r.fecha||'—')+'</td><td>'+esc(r.resueltoFecha||'—')+(r.resueltoPor?('<br><span style="font-size:11px;color:#778">'+esc(r.resueltoPor)+'</span>'):'')+'</td></tr>'; });
+  if(!filasR) filasR='<tr><td colspan="6" class="c" style="color:#888;padding:16px">Todavía no hay reportes resueltos</td></tr>';
+  let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Reporte de mantenimiento</title>';
+  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:20px;color:#0d3b66;margin:0}h2{font-size:14px;color:#0d3b66;margin:20px 0 8px}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:10px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left;vertical-align:top}th{background:#eef3fa;color:#44526a}.c{text-align:center}.cards{display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap}.card{flex:1;min-width:120px;border:1px solid #ccd;border-radius:8px;padding:10px 12px}.card .l{font-size:10.5px;color:#778;text-transform:uppercase}.card .n{font-size:18px;font-weight:800;color:#0d3b66}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
+  html+='<h1>'+esc(hotelNombre())+' · Reporte de mantenimiento</h1>'+hotelLinePrint();
+  html+='<div class="sub">Generado: '+new Date().toLocaleString('es-VE')+'</div>';
+  html+='<div class="cards"><div class="card"><div class="l">En reparación</div><div class="n">'+pend.length+'</div></div>';
+  html+='<div class="card"><div class="l">Resueltos</div><div class="n">'+res.length+'</div></div></div>';
+  html+='<h2>Habitaciones en reparación (pendientes)</h2>';
+  html+='<table><tr><th>Habitación</th><th>Prioridad</th><th>Problema</th><th>Reportado por</th><th>Fecha del reporte</th></tr>'+filasP+'</table>';
+  html+='<h2>Reportes resueltos</h2>';
+  html+='<table><tr><th>Habitación</th><th>Prioridad</th><th>Problema</th><th>Reportado por</th><th>Fecha del reporte</th><th>Resuelto</th></tr>'+filasR+'</table>';
+  html+=piePaginaHTML()+'</body></html>';
+  const w=window.open('','_blank'); if(!w){alert('Permite las ventanas emergentes para poder imprimir.');return;}
+  w.document.write(html); w.document.close(); w.focus(); setTimeout(function(){w.print();},400);
+}
 let adminTab='resumen';
 function renderAdmin(){
   const c = document.getElementById('content');
@@ -1755,6 +1779,7 @@ function renderAdmin(){
     html += statsNegocio();
     const reps = DB.get('reportes',[]).filter(r=>r.estado!=='resuelto');
     html += '<div class="stat" style="border-left-color:var(--rojo);margin-bottom:18px"><div class="n">'+reps.length+'</div><div class="l">Reportes de mantenimiento pendientes</div></div>';
+    html += '<button class="btn-gray" style="margin:-6px 0 18px" onclick="imprimirReporteMantenimiento()">🖨️ Reporte de mantenimiento (en reparación y resueltos)</button>';
     html += legend();
     html += filtroTipoBar();
     const _hayFiltroHab2 = habFiltroTipo||habFiltroNum||habSoloDisp;
