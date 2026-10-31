@@ -1024,6 +1024,7 @@ function abrirHab(num){
     body += '<div class="field" style="flex:1"><label>Noches</label><div style="margin-top:4px">'+(r.noches||1)+'</div></div></div>';
     var _oacs=acompDe(r); if(_oacs.length){ body += '<div class="field"><label>'+(_oacs.length===1?'Acompañante':'Acompañantes ('+_oacs.length+')')+'</label><div style="margin-top:4px">'+_oacs.map(function(a){return esc((a.nombre||'(sin nombre)')+(a.docNum?(' · '+docLabel(a.docTipo)+' '+a.docNum):''));}).join('<br>')+'</div></div>'; }
     body += '<div class="field"><label>Entrada</label><div style="margin-top:4px">'+(r.checkin||'—')+'</div></div>';
+    body += '<div class="field"><label>Promoción</label><select id="m-promo-ocup" onchange="cambiarPromoHab('+num+')">'+promoSelectOptions(r.promoId||'')+'</select>'+(r.promoTitulo?'<div style="background:#fff6e5;border:1px solid #f3c96b;border-radius:8px;padding:7px 10px;font-size:12.5px;color:#9a6a00;margin-top:6px">🎁 Promoción aplicada: <b>'+esc(r.promoTitulo)+'</b>'+(promoPct(r)>0?(' · −'+promoPct(r)+'% ('+fmtUSD(descUsd(r))+' menos)'):'')+'</div>':'')+'</div>';
     body += '<div class="field"><label>Tarifa por noche (USD) — editable</label><input id="m-tarifa2" type="number" min="0" step="0.01" value="'+(r.tarifa||0)+'" oninput="recalcOcup('+num+')"></div>';
     body += '<button class="btn-ghost" style="margin-bottom:10px" onclick="guardarTarifaRecep('+num+')">Guardar nueva tarifa</button>';
     body += desgloseBox(r.tarifa, r.noches||1, 'ocup');
@@ -1059,6 +1060,7 @@ function abrirHab(num){
     body += '<div class="field" style="flex:1"><label>Noches</label><input id="m-noches" type="number" min="1" value="1" oninput="recalcCheckin('+num+')"></div></div>';
     body += '<div class="field"><label>Tarifa por noche (USD) — editable</label><input id="m-tarifa" type="number" min="0" step="0.01" value="'+(r.tarifa||0)+'" oninput="recalcCheckin('+num+')"></div>';
     body += '<div class="field"><label>Salida prevista</label><input id="m-salida" type="date"></div>';
+    body += '<div class="field"><label>Promoción (opcional)</label><select id="m-promo">'+promoSelectOptions('')+'</select><div style="font-size:12px;color:#8893a5;margin-top:4px">Puedes asignarle una promoción a esta venta. Se crean y editan en la pestaña “Promociones”.</div></div>';
     body += '<div class="field"><label>¿Viene por una empresa? (opcional)</label><input id="m-empresaref" list="m-empresas-list" oninput="autoLlenarEmpresaCheckin()" placeholder="Escribe el código o nombre de la empresa"><datalist id="m-empresas-list">'+clientes().filter(c=>c.tipo==='empresa').map(e=>'<option value="'+escA(((e.codigo||'')+(e.nombre?(' — '+e.nombre):'')).trim())+'">').join('')+'</datalist><div id="m-empresa-info" style="display:none;background:#e9f8ee;border:1px solid #9fdcb4;border-radius:8px;padding:9px 11px;font-size:12.5px;color:#1d6b38;margin-top:6px"></div></div>';
     body += '<div id="m-acomp-box"></div>';
     const _libresExtra = rooms().filter(x=>x.estado==='libre' && x.num!==num);
@@ -1215,8 +1217,10 @@ function checkin(num){
   let extras='';
   if(ninos) extras+=' · '+ninos+' niño'+(ninos>1?'s':'');
   extras+=acompResumenTxt(acompanantes);
+  const promoEl=document.getElementById('m-promo'); const promoId=promoEl?promoEl.value:''; const promoTit=promoId?promoTituloPorId(promoId):''; const promoDc=promoId?promoDescById(promoId):0;
+  if(promoTit) extras+=' · Promoción: '+promoTit+(promoDc>0?(' (−'+promoDc+'%)'):'');
   updateRoom(num,{estado:'ocupada', huesped:h, clienteId:clienteId||'', personas:adultos,
-    ninos:ninos, acompanantes:acompanantes,
+    ninos:ninos, acompanantes:acompanantes, promoId:promoId, promoTitulo:promoTit, promoDesc:promoDc,
     noches:noches, tarifa:tarifa, empresaRef:empRef,
     checkin:new Date().toLocaleDateString('es-VE'), salida:document.getElementById('m-salida').value||''});
   logKardex('checkin', {hab:num, huesped:h, clienteId:clienteId||'', detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||empRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
@@ -1231,6 +1235,7 @@ function checkin(num){
       const er=findRoom(en); if(!er || er.estado!=='libre') return;
       const tar=Number(er.tarifa||0)>0?Number(er.tarifa):tarifa;
       updateRoom(en,{estado:'ocupada', huesped:h, clienteId:clienteId||'', personas:1, ninos:0, acompanantes:[], noches:noches, tarifa:tar, empresaRef:empRef, checkin:new Date().toLocaleDateString('es-VE'), salida:salidaPrev});
+      updateRoom(en,{promoId:promoId, promoTitulo:promoTit, promoDesc:promoDc});
       logKardex('checkin', {hab:en, huesped:h, clienteId:clienteId||'', detalle:'Habitación adicional del mismo cliente · '+noches+' noche(s) · '+fmtUSD(tar)+'/noche', montoUsd:0, montoBs:0, metodo:''});
       abrirEstadia(clienteId||'', en, noches, tar);
     });
@@ -1279,7 +1284,7 @@ function pedirCheckout(num){
   const noches = r.noches||1; const hosp = Number(r.tarifa||0)*noches;
   const pend = cargosDe(r).filter(c=>!c.pagado);
   const consUsd = pend.reduce((s,c)=>s+Number(c.montoUsd||0),0);
-  const totUsd = hosp + consUsd;
+  const desc = descUsd(r); const totUsd = hosp - desc + consUsd;
   const abonos = Array.isArray(r.abonos)?r.abonos:[];
   const abonoUsd = abonos.reduce((s,a)=>s+Number(a.montoUsd||0),0);
   const saldoUsd = Math.max(0, totUsd - abonoUsd);
@@ -1300,6 +1305,8 @@ function pedirCheckout(num){
   body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Tipo</span><span>'+(r.tipo||'')+'</span></div>';
   body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Entrada</span><span>'+(r.checkin||'—')+'</span></div>';
   body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Tarifa × noches</span><span>'+fmtUSD(r.tarifa)+' × '+noches+' = '+fmtUSD(hosp)+'</span></div>';
+  if(r.promoTitulo) body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Promoción</span><span>'+esc(r.promoTitulo)+'</span></div>';
+  if(desc>0.009) body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px;color:var(--verde)"><span>Descuento '+promoPct(r)+'%</span><span>- '+fmtUSD(desc)+'</span></div>';
   pend.forEach(cg=>{ body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>'+esc(cg.tipo+(cg.desc?' · '+cg.desc:''))+'</span><span>'+fmtUSD(cg.montoUsd)+'</span></div>'; });
   body += '<div class="divider"></div>';
   body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Total de la cuenta</span><span>'+fmtUSD(totUsd)+'</span></div>';
@@ -1316,7 +1323,7 @@ function pedirCheckout(num){
   showModal(body); pmReset('co', saldoUsd);
 }
 function confirmCheckout(num){
-  updateRoom(num,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false});
+  updateRoom(num,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0});
   cerrarModal(); render();
 }
 function checkoutSinCobro(num){
@@ -1330,7 +1337,7 @@ function cobrarYCheckout(num){
   const noches = r.noches||1; const hosp = Number(r.tarifa||0)*noches;
   const pend = cargosDe(r).filter(c=>!c.pagado);
   const consUsd = pend.reduce((s,c)=>s+Number(c.montoUsd||0),0);
-  const totUsd = hosp + consUsd;
+  const desc = descUsd(r); const totUsd = hosp - desc + consUsd;
   const abonos = Array.isArray(r.abonos)?r.abonos:[];
   const abonoUsd = abonos.reduce((s,a)=>s+Number(a.montoUsd||0),0);
   const saldoUsd = Math.max(0, totUsd - abonoUsd);
@@ -1481,8 +1488,8 @@ function confirmarCambioHab(origen){
   const mant=document.getElementById('ch-mant').checked;
   const o=findRoom(origen); const d=findRoom(destinoNum);
   if(!d || d.estado!=='libre'){ alert('Esa habitación ya no está libre. Elige otra.'); return; }
-  updateRoom(destinoNum,{estado:'ocupada', huesped:o.huesped, clienteId:o.clienteId||'', personas:o.personas||1, noches:o.noches||1, tarifa:o.tarifa||0, checkin:o.checkin||'', salida:o.salida||'', cargos:cargosDe(o).slice(), abonos:(Array.isArray(o.abonos)?o.abonos.slice():[]), nota:'', limpiezaPendiente:false});
-  updateRoom(origen,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, nota:'Habitación desocupada por cambio'+(motivo?' · '+motivo:'')});
+  updateRoom(destinoNum,{estado:'ocupada', huesped:o.huesped, clienteId:o.clienteId||'', personas:o.personas||1, noches:o.noches||1, tarifa:o.tarifa||0, checkin:o.checkin||'', salida:o.salida||'', cargos:cargosDe(o).slice(), abonos:(Array.isArray(o.abonos)?o.abonos.slice():[]), nota:'', limpiezaPendiente:false, promoId:o.promoId||'', promoTitulo:o.promoTitulo||'', promoDesc:o.promoDesc||0});
+  updateRoom(origen,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, nota:'Habitación desocupada por cambio'+(motivo?' · '+motivo:'')});
   moverEstadiaHab(o.clienteId||'', origen, destinoNum);
   logKardex('cambio',{hab:origen, huesped:o.huesped||'', clienteId:o.clienteId||'', detalle:'Cambio de Hab. '+origen+' → '+destinoNum+(motivo?' · '+motivo:''), montoUsd:0, montoBs:0, metodo:''});
   if(mant){
@@ -1509,7 +1516,7 @@ function imprimirRecibo(num){
   const noches = r.noches||1; const hosp = Number(r.tarifa||0)*noches;
   const pend = cargosDe(r).filter(c=>!c.pagado);
   const consUsd = pend.reduce((s,c)=>s+Number(c.montoUsd||0),0);
-  const totUsd = hosp + consUsd;
+  const desc = descUsd(r); const totUsd = hosp - desc + consUsd;
   const c = clienteDeHab(r); const cr = c?clienteResumen(c):null;
   let metodo=''; try{ const _pm=pmLeer('co'); if(_pm.ok) metodo=_pm.metodoStr; }catch(e){}
   const now = new Date();
@@ -1542,6 +1549,8 @@ function imprimirRecibo(num){
   html += '<tr><td>Entrada</td><td>'+esc(r.checkin||'—')+'</td></tr>';
   html += '<tr><td>Salida</td><td>'+esc(r.salida||now.toLocaleDateString('es-VE'))+'</td></tr>';
   html += '<tr><td>Tarifa × noches</td><td>'+fmtUSD(r.tarifa)+' × '+noches+' = '+fmtUSD(hosp)+'</td></tr>';
+  if(r.promoTitulo) html += '<tr><td>Promoción</td><td>'+esc(r.promoTitulo)+'</td></tr>';
+  if(desc>0.009) html += '<tr><td>Descuento promoción</td><td>− '+promoPct(r)+'% = - '+fmtUSD(desc)+'</td></tr>';
   pend.forEach(cg=>{ html += '<tr><td>'+esc(cg.tipo+(cg.desc?' · '+cg.desc:''))+'</td><td>'+fmtUSD(cg.montoUsd)+'</td></tr>'; });
   if(metodo) html += '<tr><td>Forma de pago</td><td>'+esc(metodo)+'</td></tr>';
   html += '<tr><td>Tasa aplicada</td><td>'+fmtBs(tasa())+' / $1</td></tr>';
@@ -2322,6 +2331,7 @@ function renderPromos(){
     h+='<div style="background:#fff;padding:16px 18px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:12px;border-left:5px solid '+(act?'var(--verde)':'#c7d0dd')+'">';
     h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">';
     h+='<div style="flex:1;min-width:200px"><div style="font-weight:800;color:var(--azul);font-size:16px">'+esc(p.titulo||'(sin título)')+(act?'':' <span style="font-size:11px;color:#8893a5;font-weight:600">· inactiva</span>')+'</div>';
+    if(Number(p.descuento||0)>0) h+='<div style="display:inline-block;background:#e9f8ee;border:1px solid #9fdcb4;color:#1d6b38;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700;margin-top:5px">−'+Number(p.descuento)+'% de descuento</div>';
     if(p.detalle) h+='<div style="font-size:13.5px;color:#44526a;margin-top:4px;line-height:1.55;white-space:pre-wrap">'+esc(p.detalle)+'</div>';
     h+='</div>';
     if(editar){
@@ -2338,6 +2348,7 @@ function renderPromos(){
 function promoNuevoModal(){
   showModal('<div style="max-width:460px"><h2>Nueva promoción</h2>'+
     '<div class="field"><label>Título</label><input id="promo-tit" placeholder="ej: Plan Cama + Desayuno"></div>'+
+    '<div class="field"><label>Descuento (% sobre el hospedaje)</label><input id="promo-desc" type="number" min="0" max="100" step="1" value="0" placeholder="ej: 10"><div style="font-size:12px;color:#8893a5;margin-top:4px">Deja 0 si la promoción no rebaja el precio (solo informativa).</div></div>'+
     '<div class="field"><label>Descripción / condiciones</label><textarea id="promo-det" rows="4" placeholder="ej: Habitación matrimonial con desayuno para 2 personas. Válido de lunes a jueves."></textarea></div>'+
     '<div class="actions" style="margin-top:12px"><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button><button class="btn-green" onclick="guardarPromoNuevo()">Guardar promoción</button></div></div>');
 }
@@ -2345,13 +2356,15 @@ function guardarPromoNuevo(){
   const t=document.getElementById('promo-tit').value.trim();
   if(!t){ alert('Escribe al menos el título de la promoción.'); return; }
   const d=document.getElementById('promo-det').value.trim();
-  const a=getPromos(); a.push({id:'promo'+Date.now(), titulo:t, detalle:d, activa:true, creado:new Date().toISOString()});
+  const dc=Math.max(0,Math.min(100,parseFloat(document.getElementById('promo-desc').value)||0));
+  const a=getPromos(); a.push({id:'promo'+Date.now(), titulo:t, detalle:d, descuento:dc, activa:true, creado:new Date().toISOString()});
   savePromos(a); cerrarModal(); render();
 }
 function promoEditarModal(id){
   const p=getPromos().find(x=>x.id===id); if(!p) return;
   showModal('<div style="max-width:460px"><h2>Editar promoción</h2>'+
     '<div class="field"><label>Título</label><input id="promo-tit" value="'+escA(p.titulo||'')+'"></div>'+
+    '<div class="field"><label>Descuento (% sobre el hospedaje)</label><input id="promo-desc" type="number" min="0" max="100" step="1" value="'+(Number(p.descuento||0))+'"><div style="font-size:12px;color:#8893a5;margin-top:4px">Deja 0 si la promoción no rebaja el precio (solo informativa).</div></div>'+
     '<div class="field"><label>Descripción / condiciones</label><textarea id="promo-det" rows="4">'+esc(p.detalle||'')+'</textarea></div>'+
     '<div class="actions" style="margin-top:12px"><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button><button class="btn-green" onclick="guardarPromoEdit(\''+id+'\')">Guardar cambios</button></div></div>');
 }
@@ -2359,11 +2372,32 @@ function guardarPromoEdit(id){
   const t=document.getElementById('promo-tit').value.trim();
   if(!t){ alert('Escribe al menos el título de la promoción.'); return; }
   const d=document.getElementById('promo-det').value.trim();
+  const dc=Math.max(0,Math.min(100,parseFloat(document.getElementById('promo-desc').value)||0));
   const a=getPromos(); const i=a.findIndex(x=>x.id===id); if(i<0) return;
-  a[i].titulo=t; a[i].detalle=d; savePromos(a); cerrarModal(); render();
+  a[i].titulo=t; a[i].detalle=d; a[i].descuento=dc; savePromos(a); cerrarModal(); render();
 }
 function togglePromo(id){ const a=getPromos(); const i=a.findIndex(x=>x.id===id); if(i<0) return; a[i].activa=(a[i].activa===false); savePromos(a); render(); }
 function eliminarPromo(id){ if(!confirm('¿Eliminar esta promoción?')) return; const a=getPromos().filter(x=>x.id!==id); savePromos(a); render(); }
+function promoActivas(){ return getPromos().filter(p=>p.activa!==false); }
+function promoTituloPorId(id){ const p=getPromos().find(x=>x.id===id); return p?(p.titulo||''):''; }
+function promoDescById(id){ const p=getPromos().find(x=>x.id===id); return p?Math.max(0,Math.min(100,Number(p.descuento||0))):0; }
+function promoPct(r){ return Math.max(0,Math.min(100,Number((r&&r.promoDesc)||0))); }
+function hospBruto(r){ return Number(r.tarifa||0)*(r.noches||1); }
+function descUsd(r){ return hospBruto(r)*promoPct(r)/100; }
+function promoSelectOptions(selId){
+  const act=promoActivas();
+  let o='<option value="">— Sin promoción —</option>';
+  act.forEach(p=>{ const d=Number(p.descuento||0); o+='<option value="'+p.id+'"'+(selId===p.id?' selected':'')+'>'+esc(p.titulo||'(sin título)')+(d>0?' (−'+d+'%)':'')+'</option>'; });
+  // si la promo ya asignada quedó inactiva/eliminada, conservarla visible
+  if(selId && !act.some(p=>p.id===selId)){ o+='<option value="'+selId+'" selected>'+esc(promoTituloPorId(selId)||'(promoción anterior)')+'</option>'; }
+  return o;
+}
+function cambiarPromoHab(num){
+  const el=document.getElementById('m-promo-ocup'); if(!el) return;
+  const id=el.value; updateRoom(num,{promoId:id, promoTitulo:id?promoTituloPorId(id):'', promoDesc:id?promoDescById(id):0});
+  if(id) logKardex('cargo',{hab:num, huesped:(findRoom(num).huesped||''), detalle:'Promoción asignada: '+promoTituloPorId(id)+(promoDescById(id)>0?(' (−'+promoDescById(id)+'%)'):''), montoUsd:0, montoBs:0, metodo:''});
+  cerrarModal(); render();
+}
 
 /* ====== CAJA / ARQUEO DIARIO ====== */
 let cajaFecha = diaKey();
