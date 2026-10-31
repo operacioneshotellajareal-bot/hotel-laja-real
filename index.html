@@ -291,10 +291,11 @@ const PERMISOS_CATALOGO=[
   ['verReportePagos','Ver el reporte de pagos por fechas','Muestra la pestaña “Reporte de pagos” con los totales por rango.'],
   ['gestionHab','Gestionar habitaciones, tipos y precios','Le da la pestaña “Habitaciones” para crear/editar habitaciones, tipos y precios base.'],
   ['verResumenOcupacion','Ver resumen de ocupación','Muestra en el Mapa de habitaciones el panel con el % de ocupación y cuántas habitaciones hay libres y ocupadas (sin montos de dinero).'],
-  ['verOcupacionTipo','Ver ocupación por tipo de habitación','Muestra en el Mapa de habitaciones una tabla con cada tipo: cuántas habitaciones hay, ocupadas, libres y el % de ocupación (sin montos de dinero).']
+  ['verOcupacionTipo','Ver ocupación por tipo de habitación','Muestra en el Mapa de habitaciones una tabla con cada tipo: cuántas habitaciones hay, ocupadas, libres y el % de ocupación (sin montos de dinero).'],
+  ['editarTasa','Modificar la tasa Bs/$','Le da la pestaña “Tasa Bs/$” para fijar la tasa a mano o traer la oficial del BCV.']
 ];
 const ROLES_CONFIGURABLES=['recepcion','supervisor'];
-function permisosDefault(rol){ return {anularPagos:false, gestionHab:false, verReportePagos:true, verResumenOcupacion:(rol==='supervisor'), verOcupacionTipo:true}; }
+function permisosDefault(rol){ return {anularPagos:false, gestionHab:false, verReportePagos:true, verResumenOcupacion:(rol==='supervisor'), verOcupacionTipo:true, editarTasa:true}; }
 function permisosDe(rol){ const p=DB.get('permisos',null); const sp=(p&&p[rol])?p[rol]:{}; return Object.assign(permisosDefault(rol), sp); }
 function setPermiso(rol,k,v){ const p=DB.get('permisos',{})||{}; if(!p[rol]) p[rol]={}; p[rol][k]=!!v; DB.set('permisos', p); }
 function puede(k){ const rol=session().rol; if(esMaster(rol)) return true; if(ROLES_CONFIGURABLES.indexOf(rol)>=0) return !!permisosDe(rol)[k]; return false; }
@@ -550,16 +551,19 @@ function renderRecepcion(){
   const verReporte = esConfig ? _perm.verReportePagos : true;
   const verGestionHab = esConfig ? _perm.gestionHab : false;
   const verOcup = puede('verOcupacionTipo');
+  const verTasa = puede('editarTasa');
   if(esConfig){ // evitar quedar en una pestaña sin permiso
     if(recepView==='reportes' && !verReporte) recepView='mapa';
     if(recepView==='habitaciones' && !verGestionHab) recepView='mapa';
   }
   if(recepView==='ocupacion' && !verOcup) recepView='mapa';
+  if(recepView==='tasa' && !verTasa) recepView='mapa';
   let tabs = recepTab('mapa','Mapa de habitaciones')+recepTab('reservas','Reservas')+recepTab('caja','Caja / Arqueo');
   if(verReporte) tabs += recepTab('reportes','Reporte de pagos');
   tabs += recepTab('clientes','Clientes')+recepTab('kardex','Kardex / Turno');
   if(verGestionHab) tabs += recepTab('habitaciones','Habitaciones');
   if(verOcup) tabs += recepTab('ocupacion','Ocupación');
+  if(verTasa) tabs += recepTab('tasa','Tasa Bs/$');
   html += '<div class="tabs">'+tabs+'</div>';
   if(!turnoActivo()){
     html += '<div style="background:#fff8e1;border:1px solid #f0d58a;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:220px;font-size:13.5px;color:#7a5b00">⚠️ <b>No hay ningún turno abierto.</b> Abre tu turno al empezar para que cada cobro y movimiento quede a tu nombre.</div><button class="btn-green" onclick="abrirTurno()">Abrir mi turno</button></div>';
@@ -576,6 +580,7 @@ function renderRecepcion(){
   if(recepView==='reportes'){ c.innerHTML = html + renderReportePagos(); return; }
   if(recepView==='habitaciones'){ c.innerHTML = html + renderGestionHab(); return; }
   if(recepView==='ocupacion'){ c.innerHTML = html + renderOcupacionTipo(); return; }
+  if(recepView==='tasa'){ c.innerHTML = html + renderTasa(); return; }
   if(recepView==='clientes'){ c.innerHTML = html + renderClientes(); return; }
   if(recepView==='kardex'){ c.innerHTML = html + renderKardex(); return; }
   html += statsBar();
