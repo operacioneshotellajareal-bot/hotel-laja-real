@@ -337,7 +337,7 @@ function countMasters(){ return DB.get('users',[]).filter(u=>esMaster(u.rol)).le
 /* ---- Permisos configurables por rol (los decide el Master) ---- */
 const PERMISOS_CATALOGO=[
   ['verTablero','Ver el Tablero del día','Muestra la pestaña “Tablero del día” con el resumen de hoy: llegadas, salidas, pagos pendientes y limpieza, de un vistazo.'],
-  ['verCxC','Ver y registrar Cuentas por cobrar (crédito)','Muestra la pestaña “Cuentas por cobrar” para anotar y cobrar las deudas a crédito de empresas o huéspedes.'],
+  ['verCxC','Ver y registrar CXC (crédito)','Muestra la pestaña “CXC” para anotar y cobrar las deudas a crédito de empresas o huéspedes.'],
   ['anularPagos','Anular cobros en caja','Permite borrar/anular un cobro ya registrado en Caja.'],
   ['verReportePagos','Ver el reporte de pagos por fechas','Muestra la pestaña “Reporte de pagos” con los totales por rango.'],
   ['gestionHab','Gestionar habitaciones, tipos y precios','Le da la pestaña “Habitaciones” para crear/editar habitaciones, tipos y precios base.'],
@@ -470,7 +470,7 @@ function atajoAyuda(){
   let h='<div class="section-title" style="margin-top:0">⌨️ Atajos de teclado</div>';
   h+='<p style="color:#55637a;font-size:13px;margin:0 0 10px">Funcionan en la computadora cuando <b>no</b> estás escribiendo en una casilla.</p>';
   h+='<table style="width:100%;border-collapse:collapse;font-size:13.5px">';
-  h+=fila('Tablero del día','T')+fila('Mapa de habitaciones','M')+fila('Reservas','R')+fila('Cobrar','C')+fila('Caja / Arqueo','J')+fila('Reporte de pagos','P')+fila('Clientes','L')+fila('Kardex / Turno','K')+fila('Promociones','O')+fila('Cuentas por cobrar','D')+fila('Ocupación','U');
+  h+=fila('Tablero del día','T')+fila('Mapa de habitaciones','M')+fila('Reservas','R')+fila('Cobrar','C')+fila('Caja / Arqueo','J')+fila('Reporte de pagos','P')+fila('Clientes','L')+fila('Kardex / Turno','K')+fila('Promociones','O')+fila('CXC','D')+fila('Ocupación','U');
   h+=fila('Nueva reserva','N')+fila('Abrir turno','A')+fila('Cerrar turno','Shift + A')+fila('Buscar','/')+fila('Imprimir','Ctrl + P')+fila('Cerrar ventana','Esc')+fila('Ver estos atajos','?');
   h+='</table>';
   h+='<div style="text-align:right;margin-top:14px"><button class="btn-gray" onclick="cerrarModal()">Cerrar</button></div>';
@@ -737,10 +737,10 @@ function reporteAuditoriaControl(){
 function renderAdministracion(){
   const c=document.getElementById('content');
   if(admView==='cxc' && !cxcAdminOn()) admView='bandeja';
-  // Sub-vistas: bandeja de envíos y cuentas por cobrar (crédito)
+  // Sub-vistas: bandeja de envíos y CXC (crédito)
   let tabsTop='<div class="tabs-wrap"><div class="tabs">';
   tabsTop+='<div class="tab '+(admView==='bandeja'?'active':'')+'" onclick="admView=\'bandeja\';render()">📥 Bandeja</div>';
-  if(cxcAdminOn()) tabsTop+='<div class="tab '+(admView==='cxc'?'active':'')+'" onclick="admView=\'cxc\';render()">💳 Cuentas por cobrar</div>';
+  if(cxcAdminOn()) tabsTop+='<div class="tab '+(admView==='cxc'?'active':'')+'" onclick="admView=\'cxc\';render()">💳 CXC</div>';
   tabsTop+='</div></div>';
   if(admView==='cxc'){ c.innerHTML = tabsTop + renderCxC(); return; }
   let arr=DB.get('enviosAdmin',[])||[];
@@ -1114,7 +1114,7 @@ function renderRecepcion(){
   if(verReporte) tabs += recepTab('reportes','Reporte de pagos');
   tabs += recepTab('clientes','Clientes')+recepTab('kardex','Kardex / Turno');
   tabs += recepTab('promociones','Promociones');
-  if(verCredito) tabs += recepTab('cxc','💳 Cuentas por cobrar');
+  if(verCredito) tabs += recepTab('cxc','💳 CXC');
   if(verGestionHab) tabs += recepTab('habitaciones','Habitaciones');
   if(verOcup) tabs += recepTab('ocupacion','Ocupación');
   if(verTasa) tabs += recepTab('tasa','Tasa Bs/$');
@@ -1613,6 +1613,7 @@ function abrirHab(num){
   body += '<h2>Habitación '+r.num+'</h2>';
   body += '<div class="rstate" style="color:'+stateColor(r.estado)+'">● '+e.t+' · <span style="color:#55637a">'+(r.tipo||'')+'</span></div>';
   if(r.estado==='ocupada'){
+    body += cxcAvisoCliente(clienteDeHab(r));
     body += '<div class="field"><label>Huésped</label><div style="font-weight:700;margin-top:4px">'+esc(r.huesped||'—')+clienteFichaLink(r)+'</div></div>';
     body += '<div style="display:flex;gap:10px"><div class="field" style="flex:1"><label>Personas (adultos)</label><div style="margin-top:4px">'+(r.personas||1)+'</div></div>';
     body += '<div class="field" style="flex:1"><label>Niños</label><div style="margin-top:4px">'+(r.ninos||0)+'</div></div>';
@@ -2611,7 +2612,7 @@ function renderAdmin(){
   if(adminTab==='cxc' && !cxcAdminOn()) adminTab='resumen';
   let html = '<div class="section-title">Panel de Administración</div>';
   html += '<div class="tabs-wrap"><div class="tabs">'+
-    tabBtn('tablero','📋 Tablero del día')+tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('reservas','Reservas')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+tabBtn('cobrar','Cobrar')+(cxcAdminOn()?tabBtn('cxc','💳 Cuentas por cobrar'):'')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','Reporte de pagos')+tabBtn('promociones','Promociones')+tabBtn('mantenimiento','Mantenimiento')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div></div>';
+    tabBtn('tablero','📋 Tablero del día')+tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('reservas','Reservas')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+tabBtn('cobrar','Cobrar')+(cxcAdminOn()?tabBtn('cxc','💳 CXC'):'')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','Reporte de pagos')+tabBtn('promociones','Promociones')+tabBtn('mantenimiento','Mantenimiento')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div></div>';
   if(adminTab==='tablero'){ c.innerHTML = html + renderTablero(); return; }
   if(adminTab==='cxc'){ c.innerHTML = html + renderCxC(); return; }
   if(adminTab==='resumen'){
@@ -3438,7 +3439,7 @@ function cobrarPintar(){
     h+='</div>';
     h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">';
     if(!pagado) h+='<button class="btn-green" style="padding:9px 16px" onclick="cobrarCuentaModal(\''+numsStr+'\')">💵 Cobrar ahora</button>';
-    if(!pagado) h+='<button class="btn-orange" style="padding:9px 16px" onclick="enviarACxCModal(\''+numsStr+'\')">📋 Enviar a cuentas por cobrar</button>';
+    if(!pagado) h+='<button class="btn-orange" style="padding:9px 16px" onclick="enviarACxCModal(\''+numsStr+'\')">📋 Enviar a CXC</button>';
     h+='<button class="btn-red" style="padding:9px 16px" onclick="checkoutCuenta(\''+numsStr+'\')">🚪 Hacer check-out (salida)</button>';
     h+='<button class="btn-primary" style="padding:9px 16px" onclick="imprimirReciboGrupo(\''+numsStr+'\')">🖨️ Recibo / PDF</button>';
     h+='</div>';
@@ -3501,7 +3502,7 @@ function cobrarCuentaModal(numsStr){
   body+='<div style="text-align:center;font-size:11px;color:#8893a5;margin-top:8px">Tasa: '+fmtBs(tasa())+' / $1</div></div>';
   body+=pmWidget('grp');
   body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cobrarCuentaConfirm(\''+g.nums.join(',')+'\')">Registrar pago</button>';
-  body+='<button class="btn-orange" onclick="enviarACxCModal(\''+g.nums.join(',')+'\')">📋 Enviar a cuentas por cobrar</button>';
+  body+='<button class="btn-orange" onclick="enviarACxCModal(\''+g.nums.join(',')+'\')">📋 Enviar a CXC</button>';
   body+='<button class="btn-primary" onclick="imprimirReciboGrupo(\''+g.nums.join(',')+'\')">Imprimir / PDF</button>';
   body+='<button class="btn-ghost" onclick="render()">Cancelar</button></div>';
   showModal(body); pmReset('grp', g.saldo);
@@ -3561,8 +3562,8 @@ function enviarACxCModal(numsStr){
   const tipoDef=(c&&c.tipo==='empresa')?'empresa':'huesped';
   const ctrlPrev=peekControl();
   let body='<button class="close" onclick="render()">×</button>';
-  body+='<h2>📋 Enviar a cuentas por cobrar</h2>';
-  body+='<div class="rstate" style="color:#55637a">La cuenta pasa <b>a crédito</b>. El huésped sale ahora y la deuda queda en <b>Cuentas por cobrar</b> con su número de control.</div>';
+  body+='<h2>📋 Enviar a CXC</h2>';
+  body+='<div class="rstate" style="color:#55637a">La cuenta pasa <b>a crédito</b>. El huésped sale ahora y la deuda queda en <b>CXC</b> con su número de control.</div>';
   body+='<div style="background:#fff8e1;border:1px solid #f0d58a;border-radius:10px;padding:12px 14px;margin-bottom:12px">';
   body+='<div style="font-size:13px"><b>N° de control:</b> '+fmtControl(ctrlPrev)+'</div>';
   body+='<div style="font-size:13px;margin-top:2px"><b>Cliente:</b> '+esc(nombre)+(doc?(' · '+esc(doc)):'')+'</div>';
@@ -3572,7 +3573,7 @@ function enviarACxCModal(numsStr){
   body+='<div class="field"><label>¿Quién queda debiendo?</label><select id="ecx-tipo"><option value="empresa"'+(tipoDef==='empresa'?' selected':'')+'>🏢 Empresa</option><option value="huesped"'+(tipoDef==='huesped'?' selected':'')+'>🧍 Huésped / persona</option></select></div>';
   body+='<div class="field"><label>Fecha de vencimiento (opcional)</label><input id="ecx-venc" type="date"></div>';
   body+='<div class="field"><label>Nota (opcional)</label><input id="ecx-nota" placeholder="Ej: paga la empresa a fin de mes"></div>';
-  body+='<div class="divider"></div><div class="actions"><button class="btn-orange" onclick="enviarACxCConfirm(\''+g.nums.join(',')+'\')">Enviar a cuentas por cobrar</button><button class="btn-ghost" onclick="render()">Cancelar</button></div>';
+  body+='<div class="divider"></div><div class="actions"><button class="btn-orange" onclick="enviarACxCConfirm(\''+g.nums.join(',')+'\')">Enviar a CXC</button><button class="btn-ghost" onclick="render()">Cancelar</button></div>';
   showModal(body);
 }
 function enviarACxCConfirm(numsStr){
@@ -3600,13 +3601,13 @@ function enviarACxCConfirm(numsStr){
     abonos:[], creadoPor:(s?s.nombre:''), origen:'cobrar', habitaciones:habitaciones, cargosDetalle:cargosDet });
   saveCxc(l);
   logKardex('credito', {hab:g.nums.join(', '), huesped:nombre, clienteId:r0.clienteId||'', control:ctrl,
-    detalle:'Enviado a cuentas por cobrar · N° control '+fmtControl(ctrl)+' · '+concepto, credUsd:g.saldo, credBs:precioBs(g.saldo), montoUsd:0, montoBs:0, metodo:'Crédito (por cobrar)'});
+    detalle:'Enviado a CXC · N° control '+fmtControl(ctrl)+' · '+concepto, credUsd:g.saldo, credBs:precioBs(g.saldo), montoUsd:0, montoBs:0, metodo:'Crédito (por cobrar)'});
   g.list.forEach(r=>{
     cerrarEstadia(r.clienteId||'', r.num, {noches:r.noches||1, montoUsd:0, metodo:'A crédito'});
     updateRoom(r.num,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0});
   });
   cerrarModal(); render();
-  alert('Cuenta enviada a Cuentas por cobrar.\nN° de control: '+fmtControl(ctrl)+'\nDeuda: '+fmtUSD(g.saldo)+'\n\nQuedó en la pestaña "Cuentas por cobrar" y aparece en el corte del turno.');
+  alert('Cuenta enviada a CXC.\nN° de control: '+fmtControl(ctrl)+'\nDeuda: '+fmtUSD(g.saldo)+'\n\nQuedó en la pestaña "CXC" y aparece en el corte del turno.');
 }
 function extenderEstadiaModal(num){
   const r=findRoom(num); if(!r||r.estado!=='ocupada'){ alert('Esa habitación no está ocupada.'); return; }
@@ -3796,12 +3797,21 @@ function pagoManualModal(){
   if(guardTurno()) return;
   let body = '<button class="close" onclick="cerrarModal()">×</button><h2>Registrar cobro manual</h2>';
   body += '<div class="field"><label>Concepto</label><input id="pm-concepto" placeholder="ej: consumo frigobar, lavandería"></div>';
-  body += '<div class="field"><label>Cargar a la cuenta de un cliente <span style="color:#8893a5;font-weight:400;font-size:12px">(opcional)</span></label><select id="pm-cliente"><option value="">— Sin cliente (cobro suelto) —</option>'+clienteCheckinOptions()+'</select></div>';
+  body += '<div class="field"><label>Cargar a la cuenta de un cliente <span style="color:#8893a5;font-weight:400;font-size:12px">(opcional)</span></label><select id="pm-cliente" onchange="pmDestinoCambio()"><option value="">— Sin cliente (cobro suelto) —</option>'+clienteCheckinOptions()+'</select></div>';
+  body += '<div class="field"><label>¿Qué hacer con este monto?</label><select id="pm-destino" onchange="pmDestinoCambio()"><option value="cobrar">💵 Cobrar ahora</option><option value="cuenta">📋 Agregar a la cuenta del cliente (cobrar después · CXC)</option></select></div>';
+  body += '<div id="pm-cuenta-aviso" style="display:none;background:#eef6ff;border:1px solid #cfe0f5;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#2a4a73;margin-bottom:8px">Se agregará a <b>CXC</b> como deuda pendiente del cliente. No entra a la caja ahora; lo cobrarás después desde la pestaña CXC.</div>';
   body += '<div style="display:flex;gap:10px"><div class="field" style="flex:2"><label>Monto total</label><input id="pm-monto" type="number" min="0" step="0.01" oninput="pmCalcManual()"></div>';
   body += '<div class="field" style="flex:1"><label>Moneda</label><select id="pm-moneda" onchange="pmCalcManual()"><option value="Bs">Bs</option><option value="USD">USD</option></select></div></div>';
-  body += pmWidget('pm');
-  body += '<div class="divider"></div><div class="actions"><button class="btn-green" onclick="guardarPagoManual()">Guardar cobro</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
-  showModal(body); pmReset('pm', 0); pmCalcManual();
+  body += '<div id="pm-pago-box">'+pmWidget('pm')+'</div>';
+  body += '<div class="divider"></div><div class="actions"><button class="btn-green" id="pm-guardar" onclick="guardarPagoManual()">Guardar cobro</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  showModal(body); pmReset('pm', 0); pmCalcManual(); pmDestinoCambio();
+}
+function pmDestinoCambio(){
+  const d=(document.getElementById('pm-destino')||{}).value||'cobrar';
+  const cuenta=(d==='cuenta');
+  const box=document.getElementById('pm-pago-box'); if(box) box.style.display=cuenta?'none':'';
+  const av=document.getElementById('pm-cuenta-aviso'); if(av) av.style.display=cuenta?'block':'none';
+  const btn=document.getElementById('pm-guardar'); if(btn) btn.innerText=cuenta?'Agregar a la cuenta':'Guardar cobro';
 }
 function pmCalcManual(){
   const mEl=document.getElementById('pm-monto'); const monto=mEl?(parseFloat(mEl.value)||0):0;
@@ -3816,6 +3826,24 @@ function guardarPagoManual(){
   const moneda = document.getElementById('pm-moneda').value;
   if(monto<=0){ alert('Escribe el monto'); return; }
   const totalUsd = moneda==='USD'? monto : (monto/tasa());
+  const destino=(document.getElementById('pm-destino')||{}).value||'cobrar';
+  if(destino==='cuenta'){
+    const cId=(document.getElementById('pm-cliente')||{}).value||'';
+    if(!cId){ alert('Para agregar a la cuenta, primero elige el huésped o la empresa arriba.'); return; }
+    const cc=clienteById(cId); if(!cc){ alert('No se encontró el cliente.'); return; }
+    const cr=clienteResumen(cc);
+    const ctrl2=siguienteControl();
+    const l=cxc(); const ss=session();
+    l.unshift({ id:'cx'+Date.now()+Math.random().toString(36).slice(2,5), control:ctrl2,
+      tipo:(cc.tipo==='empresa'?'empresa':'huesped'), nombre:cr.nom||'Cliente', docRef:cr.doc||'', telefono:cc.telefono||'',
+      concepto:concepto||'Cargo agregado a la cuenta', hab:'', montoUsd:totalUsd, fecha:hoyISO(), vencimiento:'', notas:'',
+      abonos:[], creadoPor:(ss?ss.nombre:''), origen:'caja-manual', clienteId:cId });
+    saveCxc(l);
+    logKardex('credito', {hab:0, huesped:cr.nom||'Cliente', clienteId:cId, control:ctrl2, detalle:'Agregado a CXC · Control N° '+fmtControl(ctrl2)+' · '+(concepto||'Cargo'), montoUsd:totalUsd, montoBs:precioBs(totalUsd), metodo:'Por cobrar (CXC)'});
+    cerrarModal(); render();
+    alert('Agregado a CXC.\nCliente: '+(cr.nom||'Cliente')+'\nControl N° '+fmtControl(ctrl2)+'\nMonto: '+fmtUSD(totalUsd));
+    return;
+  }
   if(PM_STATE['pm']) PM_STATE['pm'].total=totalUsd;
   const pm=pmLeer('pm'); if(!pm.ok){ alert(pm.msg); return; }
   const montoUsd=pm.totalUsd; const montoBs=precioBs(montoUsd);
@@ -3948,7 +3976,7 @@ function imprimirCorte(turnoArg, _modo){
   let filasR=''; Object.keys(D.porRecep).forEach(u=>{ const x=D.porRecep[u]; filasR+='<tr><td>'+esc(u)+'</td><td class="c">'+x.n+'</td><td class="r">'+fmtBs(x.bs)+'</td><td class="r">'+fmtUSD(x.usd)+'</td></tr>'; });
   // Anulaciones del día
   let filasA=''; D.anul.forEach(k=>{ filasA+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+k.hab):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.motivo||k.detalle||'')+'</td><td>'+esc(k.anuladoPor||k.usuario||'—')+'</td><td class="r">'+fmtBs(k.montoBs)+'</td></tr>'; });
-  // Cuentas por cobrar generadas (ventas a crédito del día/turno)
+  // CXC generadas (ventas a crédito del día/turno)
   let filasCred=''; D.cred.forEach(k=>{ filasCred+='<tr><td>'+(k.control?fmtControl(k.control):'—')+'</td><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td>'+esc(k.usuario||'—')+'</td><td class="r">'+fmtBs(k.credBs)+'</td><td class="r">'+fmtUSD(k.credUsd)+'</td></tr>'; });
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Corte '+cajaFecha+'</title>';
   html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:20px;color:#0d3b66;margin:0}h2{font-size:14px;color:#0d3b66;margin:18px 0 8px}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:10px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}.cards{display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap}.card{flex:1;min-width:120px;border:1px solid #ccd;border-radius:8px;padding:10px 12px}.card .l{font-size:10.5px;color:#778;text-transform:uppercase}.card .n{font-size:18px;font-weight:800;color:#0d3b66}.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
@@ -3982,7 +4010,7 @@ function imprimirCorte(turnoArg, _modo){
   if(filasR){ html+='<h2>Resumen por recepcionista</h2><table><tr><th>Recepcionista</th><th class="c">Transacciones</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasR+'</table>'; }
   if(filasC){ html+='<h2>Cargos extra por habitación</h2><table><tr><th>Hora</th><th>N° Control</th><th>Habitación</th><th>Huésped</th><th>Detalle del cargo</th><th>Registrado por</th></tr>'+filasC+'</table>'; }
   if(filasA){ html+='<h2>Cobros anulados en el día</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Motivo</th><th>Anulado por</th><th class="r">Bs</th></tr>'+filasA+'</table>'; }
-  if(filasCred){ html+='<h2>Cuentas por cobrar generadas (ventas a crédito)</h2><table><tr><th>N° Control</th><th>Hora</th><th>Habitación</th><th>Cliente</th><th>Detalle</th><th>Registrado por</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasCred+'<tr class="tot"><td colspan="6">TOTAL A CRÉDITO (POR COBRAR)</td><td class="r">'+fmtBs(D.credBs)+'</td><td class="r">'+fmtUSD(D.credUsd)+'</td></tr></table>'; }
+  if(filasCred){ html+='<h2>CXC generadas (ventas a crédito)</h2><table><tr><th>N° Control</th><th>Hora</th><th>Habitación</th><th>Cliente</th><th>Detalle</th><th>Registrado por</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasCred+'<tr class="tot"><td colspan="6">TOTAL A CRÉDITO (POR COBRAR)</td><td class="r">'+fmtBs(D.credBs)+'</td><td class="r">'+fmtUSD(D.credUsd)+'</td></tr></table>'; }
   html+=estadoHtml;
   if(impConfig().mostrarFirmas) html+='<div class="firmas"><div class="firma">Entregado por<br>(Recepcionista)</div><div class="firma">Recibido por<br>(Administración)</div></div>';
   html+=piePaginaHTML()+'</body></html>';
@@ -4092,6 +4120,31 @@ function cxcAbon(e){ return (Array.isArray(e.abonos)?e.abonos:[]).reduce((s,a)=>
 function cxcSaldo(e){ return Math.max(0, Number(e.montoUsd||0)-cxcAbon(e)); }
 function cxcPagada(e){ return cxcSaldo(e)<=0.009; }
 function cxcVencida(e){ if(cxcPagada(e)) return false; if(!e.vencimiento) return false; return String(e.vencimiento)<hoyISO(); }
+function cxcNormDoc(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function cxcPendientesDeCliente(cli){
+  if(!cli) return [];
+  const docDigits=cxcNormDoc(cli.docNum||'');
+  const nom=(clienteNombre(cli)||'').trim().toLowerCase();
+  return cxc().filter(function(e){ return !cxcPagada(e); }).filter(function(e){
+    const eDoc=cxcNormDoc(e.docRef||'');
+    const eNom=String(e.nombre||'').trim().toLowerCase();
+    let m=false;
+    if(docDigits && eDoc && docDigits.length>=5){ m = (eDoc.indexOf(docDigits)>=0 || docDigits.indexOf(eDoc)>=0); }
+    if(!m && e.clienteId && cli.id) m = (e.clienteId===cli.id);
+    if(!m && nom && eNom) m = (eNom===nom);
+    return m;
+  });
+}
+function cxcAvisoCliente(cli){
+  const p=cxcPendientesDeCliente(cli); if(!p.length) return '';
+  let tot=0; p.forEach(function(e){ tot+=cxcSaldo(e); });
+  return '<div style="background:#fdecea;border:1px solid #f1b0b0;border-radius:10px;padding:10px 13px;margin:8px 0;font-size:13px;color:#a1392b"><b>⚠️ Atención:</b> este '+(cli.tipo==='empresa'?'cliente / empresa':'huésped')+' tiene <b>'+p.length+'</b> cuenta(s) en <b>CXC</b> sin pagar, por <b>'+fmtUSD(tot)+'</b>. Revísalo en la pestaña CXC.</div>';
+}
+function cxcBadgeCliente(cli){
+  const p=cxcPendientesDeCliente(cli); if(!p.length) return '';
+  let tot=0; p.forEach(function(e){ tot+=cxcSaldo(e); });
+  return '<span style="display:inline-block;background:#fdecea;border:1px solid #f1b0b0;border-radius:999px;padding:1px 9px;margin-left:6px;font-size:11.5px;font-weight:700;color:#a1392b">⚠️ CXC: '+fmtUSD(tot)+'</span>';
+}
 function setCxcFiltro(v){ cxcFiltro=v; render(); }
 function renderCxC(){
   const list=cxc().slice().sort((a,b)=>String(b.fecha||'').localeCompare(String(a.fecha||'')));
@@ -4099,7 +4152,7 @@ function renderCxC(){
   const pag=list.filter(e=>cxcPagada(e));
   const venc=pend.filter(e=>cxcVencida(e));
   let totPend=0; pend.forEach(e=>{ totPend+=cxcSaldo(e); });
-  let h='<div class="section-title" style="margin-top:4px">💳 Cuentas por cobrar (crédito)</div>';
+  let h='<div class="section-title" style="margin-top:4px">💳 CXC (crédito)</div>';
   h+='<p style="font-size:13px;color:#8893a5;margin:0 0 14px;line-height:1.6">Deudas a crédito de <b>empresas</b> o <b>huéspedes</b> que pagan después. Aquí llevas el control: cuánto deben, cuánto han abonado y qué falta.</p>';
   // Tarjetas resumen
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px">';
@@ -4108,7 +4161,7 @@ function renderCxC(){
   h+='<div style="background:#e9f8ee;border:1px solid #9fdcb4;border-radius:12px;padding:12px 14px"><div style="font-size:11px;color:#1d6b38">YA COBRADAS</div><div style="font-size:22px;font-weight:800;color:#1d6b38;line-height:1.1">'+pag.length+'</div></div>';
   h+='</div>';
   // Acciones
-  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn-green" onclick="cxcNuevaModal()">➕ Nueva cuenta por cobrar</button>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn-green" onclick="cxcNuevaModal()">➕ Nueva CXC</button>';
   if(pend.length>0) h+='<button class="btn-orange" onclick="imprimirMorosidad()">📋 Reporte de morosidad</button>';
   if(list.length>0) h+='<button class="btn-gray" onclick="cxcExportar()">⬇️ Exportar a Excel</button>';
   h+='</div>';
@@ -4117,7 +4170,7 @@ function renderCxC(){
   h+='<div style="margin-bottom:10px">'+chip('pendiente','Pendientes',pend.length)+chip('pagado','Cobradas',pag.length)+chip('todas','Todas',list.length)+'</div>';
   let filtradas = cxcFiltro==='pendiente'?pend : (cxcFiltro==='pagado'?pag : list);
   if(filtradas.length===0){
-    h+='<div class="empty-guia"><span class="ico">💳</span><div class="t">'+(list.length===0?'Todavía no hay cuentas por cobrar':'No hay cuentas con este filtro')+'</div><div class="s">'+(list.length===0?'Cuando una empresa o un huésped se vaya a crédito, toca “Nueva cuenta por cobrar” y anota cuánto queda debiendo.':'Prueba con otro filtro.')+'</div></div>';
+    h+='<div class="empty-guia"><span class="ico">💳</span><div class="t">'+(list.length===0?'Todavía no hay CXC':'No hay cuentas con este filtro')+'</div><div class="s">'+(list.length===0?'Cuando una empresa o un huésped se vaya a crédito, toca “Nueva CXC” y anota cuánto queda debiendo.':'Prueba con otro filtro.')+'</div></div>';
     return h;
   }
   filtradas.forEach(e=>{
@@ -4149,13 +4202,13 @@ function renderCxC(){
 }
 function clientes(){ return DB.get('clientes', []); }
 function saveClientes(list){ DB.set('clientes', list); }
-/* ---- Cuentas por cobrar: alta / edición ---- */
+/* ---- CXC: alta / edición ---- */
 function cxcNuevaModal(id){
   const e = id ? cxc().find(x=>x.id===id) : null;
   cxcEdit = e ? e.id : null;
   const d = e || {tipo:'empresa',nombre:'',docRef:'',telefono:'',concepto:'',hab:'',montoUsd:'',fecha:hoyISO(),vencimiento:'',notas:''};
   let b='<button class="close" onclick="cerrarModal()">×</button>';
-  b+='<h2>'+(e?'✏️ Editar cuenta por cobrar':'➕ Nueva cuenta por cobrar')+'</h2>';
+  b+='<h2>'+(e?'✏️ Editar CXC':'➕ Nueva CXC')+'</h2>';
   b+='<div style="font-size:12.5px;color:#8893a5;margin:-4px 0 12px">Anota una deuda a crédito. El monto es en dólares; el sistema calcula los Bs con la tasa del día.</div>';
   b+='<div class="field"><label>¿Quién debe?</label><select id="cxc-tipo"><option value="empresa"'+(d.tipo==='empresa'?' selected':'')+'>🏢 Empresa</option><option value="huesped"'+(d.tipo==='huesped'?' selected':'')+'>🧍 Huésped / persona</option></select></div>';
   b+='<div class="field"><label>Nombre de la empresa o persona</label><input id="cxc-nombre" value="'+escA(d.nombre)+'" placeholder="Ej: Corporación XYZ, C.A."></div>';
@@ -4216,7 +4269,7 @@ function cxcAbonarConfirm(id){
   e.abonos.push({ts:new Date().toISOString(), montoUsd:monto, montoBs:precioBs(monto), metodo:metodo, nota:nota, usuario:(s?s.nombre:'')});
   saveCxc(l);
   // Queda registrado también en el Kardex del turno como cobro
-  try{ logKardex('pago',{huesped:e.nombre||'', detalle:'Abono a cuenta por cobrar'+(e.concepto?(' · '+e.concepto):'')+(nota?(' · '+nota):''), montoUsd:monto, montoBs:precioBs(monto), metodo:metodo}); }catch(err){}
+  try{ logKardex('pago',{huesped:e.nombre||'', detalle:'Abono a CXC'+(e.concepto?(' · '+e.concepto):'')+(nota?(' · '+nota):''), montoUsd:monto, montoBs:precioBs(monto), metodo:metodo}); }catch(err){}
   cerrarModal(); render();
 }
 function cxcVerAbonos(id){
@@ -4240,7 +4293,7 @@ function cxcMarcarPagada(id){
   if(saldo>0.009){ if(!confirm('Falta por cobrar '+fmtUSD(saldo)+'. ¿Registrar ese monto como pagado y cerrar la cuenta?')) return;
     const s=session(); if(!Array.isArray(e.abonos)) e.abonos=[];
     e.abonos.push({ts:new Date().toISOString(), montoUsd:saldo, montoBs:precioBs(saldo), metodo:'Saldo final', nota:'Cierre de la cuenta', usuario:(s?s.nombre:'')});
-    try{ logKardex('pago',{huesped:e.nombre||'', detalle:'Pago final cuenta por cobrar'+(e.concepto?(' · '+e.concepto):''), montoUsd:saldo, montoBs:precioBs(saldo), metodo:'Saldo final'}); }catch(err){}
+    try{ logKardex('pago',{huesped:e.nombre||'', detalle:'Pago final CXC'+(e.concepto?(' · '+e.concepto):''), montoUsd:saldo, montoBs:precioBs(saldo), metodo:'Saldo final'}); }catch(err){}
   }
   saveCxc(l); render();
 }
@@ -4251,7 +4304,7 @@ function cxcReabrir(id){
   saveCxc(l); render();
 }
 function cxcEliminar(id){
-  if(!confirm('¿Eliminar esta cuenta por cobrar? No se puede deshacer.')) return;
+  if(!confirm('¿Eliminar esta CXC? No se puede deshacer.')) return;
   saveCxc(cxc().filter(x=>x.id!==id)); render();
 }
 function cxcExportar(){
@@ -4542,7 +4595,7 @@ function clienteRows(){
   list.forEach(c=>{
     const nom = c.tipo==='empresa' ? esc(c.nombre) : esc(((c.nombre||'')+' '+(c.apellido||'')).trim());
     const doc = c.docNum ? esc(docLabel(c.docTipo)+' '+c.docNum) : '—';
-    t += '<tr><td><b>'+nom+'</b>'+(c.tipo==='empresa'?' <span style="font-size:11px;color:#8893a5">(Empresa)</span>':'')+(c.tipo==='empresa'&&c.codigo?' <span style="font-size:11px;color:#1b6ca8;font-weight:700">['+esc(c.codigo)+']</span>':'')+'</td>'+
+    t += '<tr><td><b>'+nom+'</b>'+(c.tipo==='empresa'?' <span style="font-size:11px;color:#8893a5">(Empresa)</span>':'')+(c.tipo==='empresa'&&c.codigo?' <span style="font-size:11px;color:#1b6ca8;font-weight:700">['+esc(c.codigo)+']</span>':'')+cxcBadgeCliente(c)+'</td>'+
       '<td>'+doc+'</td><td>'+esc(c.correo||'—')+'</td><td>'+esc(c.ocupacion||'—')+'</td><td>'+esc(c.ciudad||'—')+'</td>'+
       '<td style="text-align:right;white-space:nowrap"><button class="btn-ghost" style="padding:6px 12px;margin-right:6px" onclick="verClienteModal(\''+c.id+'\')">Ver</button>'+
       '<button class="btn-ghost" style="padding:6px 12px;margin-right:6px" onclick="editClienteModal(\''+c.id+'\')">Editar</button>'+
@@ -4846,6 +4899,8 @@ function cerrarTurno(){
   const t=turnos(); const a=t.find(x=>x.abierto); if(!a){ alert('No hay ningún turno abierto.'); return; }
   if(!confirm('¿Cerrar el turno de '+a.nombre+'?\n\nSe hará el CORTE completo: todo lo que se cobró en este turno y las habitaciones que quedan sin cobrar (pasan como pendientes para el siguiente turno).')) return;
   a.fin=new Date().toISOString(); a.abierto=false; saveTurnos(t);
+  // Al cerrar el turno se envía automáticamente el corte a la bandeja de Administración
+  let _envioCorteOk=false; try{ _envioNota='Corte enviado automáticamente al cerrar el turno de '+(a.nombre||'')+'.'; _envioCorteOk=imprimirCorte(a.id,'enviar'); }catch(_){} _envioNota='';
   const _q=ocultarPagadosCobrar();
   // Guardamos el resumen del turno cerrado para mostrarlo al final
   const movs=kardexDeTurno(a.id);
@@ -4857,7 +4912,7 @@ function cerrarTurno(){
   let deuda=0; sinPagar.forEach(r=>{ deuda+=saldoDeHab(r); });
   const resumen = { id:a.id, nombre:a.nombre, inicio:a.inicio, fin:a.fin, cobrUsd:cobrUsd, cobrBs:cobrBs,
     nMov:movs.length, nPagos:nPagos, nCheckin:nCheckin, nCheckout:nCheckout, nCargos:nCargos, nAnul:nAnul,
-    sinPagar:sinPagar.map(r=>({num:r.num, huesped:r.huesped||'', debe:saldoDeHab(r)})), deuda:deuda, quitadas:_q };
+    sinPagar:sinPagar.map(r=>({num:r.num, huesped:r.huesped||'', debe:saldoDeHab(r)})), deuda:deuda, quitadas:_q, envioOk:_envioCorteOk };
   try{ sessionStorage.setItem('hotel_ultimoCorte', JSON.stringify(resumen)); }catch(e){}
   render();
   setTimeout(function(){ mostrarResumenCierre(resumen); }, 60);
@@ -4879,6 +4934,7 @@ function mostrarResumenCierre(R){
   }
   body+='</div>';
   if(R.quitadas>0) body+='<div style="font-size:12.5px;color:#1d6b38;margin-bottom:10px">✓ Se quitaron de “Cobrar” '+R.quitadas+' habitación(es) que ya estaban pagadas.</div>';
+  body+='<div style="font-size:12.5px;'+(R.envioOk?'color:#1d6b38':'color:#b36b00')+';margin-bottom:10px">'+(R.envioOk?'📤 El corte de este turno se envió automáticamente a la bandeja de Administración.':'⚠️ No se pudo enviar el corte a Administración automáticamente; puedes enviarlo a mano desde Caja.')+'</div>';
   body+='<div class="divider"></div><div class="actions"><button class="btn-primary" onclick="cerrarModal();imprimirCorteTurnoResumen(\''+R.id+'\')">🖨️ Imprimir el corte de este turno</button><button class="btn-gray" onclick="cerrarModal();imprimirKardex(\''+R.id+'\')">📋 Kardex</button><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>';
   showModal(body);
 }
@@ -5219,8 +5275,8 @@ function renderIdentidad(){
     html+='</div>';
     const _cxON=cxcAdminOn();
     html+='<div style="background:#fff;padding:20px;border-radius:12px;max-width:620px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-top:20px">';
-    html+='<div class="section-title" style="font-size:15px;margin-top:0">💳 Cuentas por cobrar en Administración</div>';
-    html+='<p style="font-size:12px;color:#8893a5;margin-top:0">Muestra u oculta la pestaña <b>Cuentas por cobrar</b> dentro del panel de Administración. Si la apagas, deja de verse ahí; lo que ya registraste <b>no se borra</b> y sigue contando en los cortes.</p>';
+    html+='<div class="section-title" style="font-size:15px;margin-top:0">💳 CXC en Administración</div>';
+    html+='<p style="font-size:12px;color:#8893a5;margin-top:0">Muestra u oculta la pestaña <b>CXC</b> dentro del panel de Administración. Si la apagas, deja de verse ahí; lo que ya registraste <b>no se borra</b> y sigue contando en los cortes.</p>';
     html+='<div style="display:flex;align-items:center;gap:12px;margin-top:6px"><span style="font-weight:700;color:'+(_cxON?'#1d6b38':'#8893a5')+'">'+(_cxON?'✅ Activada':'⬜ Apagada')+'</span>';
     html+='<button class="'+(_cxON?'btn-red':'btn-green')+'" style="padding:8px 16px" onclick="toggleCxcAdmin()">'+(_cxON?'Apagar':'Encender')+'</button></div>';
     html+='</div>';
