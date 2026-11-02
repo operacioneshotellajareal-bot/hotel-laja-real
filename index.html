@@ -539,7 +539,10 @@ function ajustarTabs(){
   wraps.forEach(wrap=>{
     const tabs=wrap.querySelector('.tabs'); if(!tabs) return;
     const act=tabs.querySelector('.tab.active');
-    if(act && act.scrollIntoView){ try{ act.scrollIntoView({behavior:'auto',inline:'center',block:'nearest'}); }catch(e){} }
+    if(act){
+      const target = act.offsetLeft - (tabs.clientWidth/2) + (act.offsetWidth/2);
+      try{ tabs.scrollLeft = Math.max(0, target); }catch(e){}
+    }
     const marca=()=>{ const max=tabs.scrollWidth-tabs.clientWidth-2; wrap.classList.toggle('mas', tabs.scrollLeft < max); wrap.classList.toggle('izq', tabs.scrollLeft > 4); };
     marca();
     if(!tabs._marcaLigada){ tabs.addEventListener('scroll', marca); tabs._marcaLigada=true; }
@@ -2368,6 +2371,7 @@ function chatEtiquetaCanal(canal){
 /* el rol actual puede ver este canal? */
 function chatCanalPermitido(canal, rol){
   if(canal==='general') return true;
+  if(esMaster(rol)) return true;
   if(canal.indexOf('mod:')===0){
     const partes=canal.slice(4).split('_');
     return partes.indexOf(rol)>=0;
@@ -2617,10 +2621,6 @@ function renderAdmin(){
   if(adminTab==='cxc'){ c.innerHTML = html + renderCxC(); return; }
   if(adminTab==='resumen'){
     html += statsBar();
-    html += statsNegocio();
-    const reps = DB.get('reportes',[]).filter(r=>r.estado!=='resuelto');
-    html += '<div class="stat" style="border-left-color:var(--rojo);margin-bottom:18px"><div class="n">'+reps.length+'</div><div class="l">Reportes de mantenimiento pendientes</div></div>';
-    html += '<button class="btn-gray" style="margin:-6px 0 18px" onclick="adminTab=\'mantenimiento\';render()">🔧 Ir a Mantenimiento</button>';
     html += legend();
     html += filtroTipoBar();
     const _hayFiltroHab2 = habFiltroTipo||habFiltroNum||habFiltroEstado;
@@ -5305,8 +5305,10 @@ function startPolling(){
       let cambio=false;
       SYNC_KEYS.forEach(k=>{ if(antes[k]!==localStorage.getItem('hotel_'+k)) cambio=true; });
       if(cambio && !hayFormularioActivo()){
+        const _sy = (window.scrollY||window.pageYOffset||0);
         aplicarTema(); pintarMarca();
         if(session()) render();
+        try{ window.scrollTo(0, _sy); }catch(e){}
       }
     }catch(e){ /* sin conexión: seguimos con los datos del equipo */ }
   }, 6000);
