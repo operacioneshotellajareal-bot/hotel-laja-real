@@ -802,7 +802,7 @@ function setAutMes(v){ autMes=v||diaKey().slice(0,7); render(); }
 function setServMes(v){ servMes=v||diaKey().slice(0,7); render(); }
 function setServRest(v){ servRest=v||''; render(); }
 function autorizadasDelMes(ym){ return kardexAll().filter(k=>k.tipo==='autorizada' && ymKey(k.ts)===ym).sort((a,b)=>new Date(a.ts)-new Date(b.ts)); }
-function servicioDelMes(ym){ return kardexAll().filter(k=>k.tipo==='cargo' && (k.cargoTipo==='Comida' || (k.restaurante&&String(k.restaurante).trim())) && ymKey(k.ts)===ym).sort((a,b)=>new Date(a.ts)-new Date(b.ts)); }
+function servicioDelMes(ym){ return kardexAll().filter(k=>k.tipo==='cargo' && (k.cargoTipo==='Comida' || k.cargoTipo==='Minibar' || (k.restaurante&&String(k.restaurante).trim())) && ymKey(k.ts)===ym).sort((a,b)=>new Date(a.ts)-new Date(b.ts)); }
 
 function renderAutorizadasAdmin(){
   const list=autorizadasDelMes(autMes);
@@ -854,38 +854,40 @@ function renderServicioAdmin(){
   if(servRest) list=list.filter(k=>String(k.restaurante||'')===servRest);
   let totUsd=0; const porRest={}; rs.forEach(n=>porRest[n]={n:0,usd:0});
   list.forEach(k=>{ const u=Number(k.cargoUsd||0); totUsd+=u; const rn=String(k.restaurante||'Sin restaurante'); if(!porRest[rn]) porRest[rn]={n:0,usd:0}; porRest[rn].n++; porRest[rn].usd+=u; });
-  let h='<div class="section-title">🍽️ Servicio a la habitación (comida)</div>';
-  h+='<p style="font-size:13px;color:#8893a5;margin:0 0 14px;line-height:1.6">Corte detallado de la comida que se pidió a la habitación: de cuál restaurante, de qué habitación, el día, la hora, el turno, la recepción que lo anotó y el monto. Elige el mes y, si quieres, un restaurante.</p>';
+  let h='<div class="section-title">🍽️ Servicio a la habitación (comida y minibar)</div>';
+  h+='<p style="font-size:13px;color:#8893a5;margin:0 0 14px;line-height:1.6">Corte detallado de lo que se pidió a la habitación (comida y minibar de los restaurantes): de cuál restaurante, de qué habitación, el día, la hora, el turno, la recepción que lo anotó y el monto. Elige el mes y, si quieres, un restaurante.</p>';
   h+='<div style="background:#f3f6fb;border:1px solid #d9e2f0;border-radius:12px;padding:14px 16px;margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">';
   h+='<div style="flex:1;min-width:150px"><label>Mes</label><input type="month" value="'+escA(servMes)+'" onchange="setServMes(this.value)"></div>';
   h+='<div style="flex:1;min-width:160px"><label>Restaurante</label><select onchange="setServRest(this.value)"><option value="">Los dos / todos</option>'+rs.map(n=>'<option value="'+escA(n)+'"'+(servRest===n?' selected':'')+'>'+esc(n)+'</option>').join('')+'</select></div>';
   h+='<button class="btn-primary" onclick="imprimirServicio()">🖨️ Imprimir / PDF</button>';
   h+='<button class="btn-ghost" onclick="exportarServicioXLS()">⬇️ Excel</button></div>';
-  h+='<div class="stats"><div class="stat" style="border-left-color:var(--naranja)"><div class="n">'+list.length+'</div><div class="l">Pedidos de comida</div></div>';
-  h+='<div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtUSD(totUsd)+'</div><div class="l">Total comida (USD)</div></div>';
-  h+='<div class="stat" style="border-left-color:var(--azul2)"><div class="n" style="font-size:20px">'+fmtBs(precioBs(totUsd))+'</div><div class="l">Total comida (Bs)</div></div></div>';
+  h+='<div class="stats"><div class="stat" style="border-left-color:var(--naranja)"><div class="n">'+list.length+'</div><div class="l">Pedidos (comida y minibar)</div></div>';
+  h+='<div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtUSD(totUsd)+'</div><div class="l">Total servicio (USD)</div></div>';
+  h+='<div class="stat" style="border-left-color:var(--azul2)"><div class="n" style="font-size:20px">'+fmtBs(precioBs(totUsd))+'</div><div class="l">Total servicio (Bs)</div></div></div>';
   h+='<div class="section-title" style="font-size:15px">Por restaurante</div>';
   h+='<table class="users-table"><tr><th>Restaurante</th><th>Pedidos</th><th>Total USD</th><th>Total Bs</th></tr>';
   Object.keys(porRest).forEach(n=>{ const x=porRest[n]; if(x.n===0 && rs.indexOf(n)<0) return; h+='<tr><td>'+esc(n)+'</td><td>'+x.n+'</td><td>'+fmtUSD(x.usd)+'</td><td>'+fmtBs(precioBs(x.usd))+'</td></tr>'; });
   h+='<tr style="font-weight:800;background:#f3f6fb"><td>TOTAL</td><td>'+list.length+'</td><td>'+fmtUSD(totUsd)+'</td><td>'+fmtBs(precioBs(totUsd))+'</td></tr></table>';
   h+='<div class="section-title" style="font-size:15px;margin-top:20px">Detalle de pedidos</div>';
-  if(!list.length){ h+='<div class="empty-guia"><span class="ico">🍽️</span><div class="t">No hay pedidos de comida en '+esc(mesLabel(servMes))+'</div><div class="s">Cuando Recepción agregue un consumo de tipo <b>Comida</b> y elija el restaurante, aparecerá aquí.</div></div>'; }
+  if(!list.length){ h+='<div class="empty-guia"><span class="ico">🍽️</span><div class="t">No hay pedidos en '+esc(mesLabel(servMes))+'</div><div class="s">Cuando Recepción agregue un consumo de tipo <b>Comida</b> o <b>Minibar</b> y elija el restaurante, aparecerá aquí.</div></div>'; }
   else {
     h+='<div style="overflow-x:auto"><table class="users-table" style="margin:0"><tr><th>Día</th><th>Hora</th><th>Turno</th><th>Restaurante</th><th>Hab.</th><th>Huésped</th><th>Detalle</th><th>Recepción</th><th>Monto USD</th><th>Monto Bs</th></tr>';
     list.forEach(k=>{ h+='<tr><td style="white-space:nowrap">'+esc(fechaDDMMYYYY(diaKey(new Date(k.ts))))+'</td><td>'+horaCorta(k.ts)+'</td><td style="font-size:12px">'+esc(turnoTxtTs(k.ts))+'</td><td>'+esc(k.restaurante||'—')+'</td><td>'+(k.hab||'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td style="font-size:12px">'+esc(k.desc||'')+'</td><td>'+esc(k.usuario||'—')+'</td><td>'+fmtUSD(k.cargoUsd||0)+'</td><td>'+fmtBs(precioBs(k.cargoUsd||0))+'</td></tr>'; });
     h+='</table></div>';
   }
-  h+='<div style="background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:16px;margin-top:22px;max-width:620px">';
-  h+='<div class="section-title" style="font-size:15px;margin-top:0">🍽️ Nombres de los restaurantes</div>';
-  h+='<p style="font-size:12px;color:#8893a5;margin-top:0">Así se llaman tus restaurantes. Son los que aparecen al anotar una comida. Puedes cambiarlos, agregar o quitar.</p>';
-  rs.forEach((n,i)=>{ h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><input id="rst-'+i+'" value="'+escA(n)+'" style="flex:1"><button class="btn-ghost" style="padding:6px 10px" onclick="guardarNombreRest('+i+')">Guardar</button><button class="btn-red" style="padding:6px 10px" onclick="eliminarRest('+i+')">Eliminar</button></div>'; });
-  h+='<div style="display:flex;gap:8px;align-items:center;margin-top:12px"><input id="rst-nuevo" placeholder="ej: Restaurante La Terraza" style="flex:1"><button class="btn-green" style="padding:6px 12px" onclick="agregarRest()">+ Agregar</button></div>';
-  h+='</div>';
+  if(session() && session().rol==='master'){
+    h+='<div style="background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:16px;margin-top:22px;max-width:620px">';
+    h+='<div class="section-title" style="font-size:15px;margin-top:0">🍽️ Nombres de los restaurantes</div>';
+    h+='<p style="font-size:12px;color:#8893a5;margin-top:0">Solo el Master puede cambiar, agregar o quitar restaurantes. Son los que aparecen al anotar una comida o minibar.</p>';
+    rs.forEach((n,i)=>{ h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><input id="rst-'+i+'" value="'+escA(n)+'" style="flex:1"><button class="btn-ghost" style="padding:6px 10px" onclick="guardarNombreRest('+i+')">Guardar</button><button class="btn-red" style="padding:6px 10px" onclick="eliminarRest('+i+')">Eliminar</button></div>'; });
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-top:12px"><input id="rst-nuevo" placeholder="ej: Restaurante La Terraza" style="flex:1"><button class="btn-green" style="padding:6px 12px" onclick="agregarRest()">+ Agregar</button></div>';
+    h+='</div>';
+  }
   return h;
 }
-function guardarNombreRest(i){ const el=document.getElementById('rst-'+i); if(!el) return; const v=el.value.trim(); if(!v){ alert('Escribe un nombre.'); return; } const a=restaurantes().slice(); a[i]=v; saveRestaurantes(a); render(); }
-function eliminarRest(i){ const a=restaurantes().slice(); if(a.length<=1){ alert('Debe quedar al menos un restaurante.'); return; } if(!confirm('¿Quitar “'+a[i]+'” de la lista? Lo ya registrado no se borra.')) return; a.splice(i,1); saveRestaurantes(a); render(); }
-function agregarRest(){ const el=document.getElementById('rst-nuevo'); if(!el) return; const v=el.value.trim(); if(!v){ alert('Escribe un nombre.'); return; } const a=restaurantes().slice(); a.push(v); saveRestaurantes(a); render(); }
+function guardarNombreRest(i){ if(!(session()&&session().rol==='master')){ alert('Solo el Master puede cambiar los restaurantes.'); return; } const el=document.getElementById('rst-'+i); if(!el) return; const v=el.value.trim(); if(!v){ alert('Escribe un nombre.'); return; } const a=restaurantes().slice(); a[i]=v; saveRestaurantes(a); render(); }
+function eliminarRest(i){ if(!(session()&&session().rol==='master')){ alert('Solo el Master puede quitar restaurantes.'); return; } const a=restaurantes().slice(); if(a.length<=1){ alert('Debe quedar al menos un restaurante.'); return; } if(!confirm('¿Quitar “'+a[i]+'” de la lista? Lo ya registrado no se borra.')) return; a.splice(i,1); saveRestaurantes(a); render(); }
+function agregarRest(){ if(!(session()&&session().rol==='master')){ alert('Solo el Master puede agregar restaurantes.'); return; } const el=document.getElementById('rst-nuevo'); if(!el) return; const v=el.value.trim(); if(!v){ alert('Escribe un nombre.'); return; } const a=restaurantes().slice(); a.push(v); saveRestaurantes(a); render(); }
 function imprimirServicio(){
   let list=servicioDelMes(servMes);
   const rs=restaurantes();
@@ -897,9 +899,9 @@ function imprimirServicio(){
   if(!filas) filas='<tr><td colspan="10" class="c" style="color:#888;padding:18px">No hay pedidos de comida en este mes</td></tr>';
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Servicio a la habitación '+esc(mesLabel(servMes))+'</title>';
   html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:20px;color:#0d3b66;margin:0}h2{font-size:14px;color:#0d3b66;margin:18px 0 8px}.sub{color:#667;font-size:13px;margin:4px 0 16px}.cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}.card{flex:1;min-width:120px;border:1px solid #ccd;border-radius:8px;padding:10px 12px}.card .l{font-size:10.5px;color:#778;text-transform:uppercase}.card .n{font-size:18px;font-weight:800;color:#0d3b66}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}th,td{border:1px solid #ccd;padding:5px 7px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
-  html+='<h1>'+esc(hotelNombre())+' · 🍽️ Servicio a la habitación (comida)</h1>'+hotelLinePrint();
+  html+='<h1>'+esc(hotelNombre())+' · 🍽️ Servicio a la habitación (comida y minibar)</h1>'+hotelLinePrint();
   html+='<div class="sub">Mes de <b>'+esc(mesLabel(servMes))+'</b>'+(servRest?(' · Restaurante: <b>'+esc(servRest)+'</b>'):'')+' · Generado: '+new Date().toLocaleString('es-VE')+' · Tasa: '+fmtBs(tasa())+' / $1</div>';
-  html+='<div class="cards"><div class="card"><div class="l">Pedidos de comida</div><div class="n">'+list.length+'</div></div><div class="card"><div class="l">Total comida USD</div><div class="n">'+fmtUSD(totUsd)+'</div></div><div class="card"><div class="l">Total comida Bs</div><div class="n">'+fmtBs(precioBs(totUsd))+'</div></div></div>';
+  html+='<div class="cards"><div class="card"><div class="l">Pedidos (comida y minibar)</div><div class="n">'+list.length+'</div></div><div class="card"><div class="l">Total servicio USD</div><div class="n">'+fmtUSD(totUsd)+'</div></div><div class="card"><div class="l">Total servicio Bs</div><div class="n">'+fmtBs(precioBs(totUsd))+'</div></div></div>';
   html+='<h2>Por restaurante</h2><table><tr><th>Restaurante</th><th class="c">Pedidos</th><th class="r">Total USD</th><th class="r">Total Bs</th></tr>'+filasR+'<tr class="tot"><td>TOTAL</td><td class="c">'+list.length+'</td><td class="r">'+fmtUSD(totUsd)+'</td><td class="r">'+fmtBs(precioBs(totUsd))+'</td></tr></table>';
   html+='<h2>Detalle de pedidos</h2><table><tr><th>Día</th><th>Hora</th><th>Turno</th><th>Restaurante</th><th>Hab.</th><th>Huésped</th><th>Detalle</th><th>Recepción</th><th class="r">USD</th><th class="r">Bs</th></tr>'+filas+'</table>';
   if(impConfig().mostrarFirmas) html+='<div class="firmas"><div class="firma">Revisado por<br>(Administración)</div><div class="firma">Conforme<br>(Restaurante)</div></div>';
@@ -2186,13 +2188,13 @@ function agregarCargoModal(num){
   showModal(body);
 }
 function cgPrev(){ const m=parseFloat(document.getElementById('cg-monto').value)||0; const e=document.getElementById('cg-prev'); if(e) e.innerText='Equivale a '+fmtBs(precioBs(m)); }
-function cgTipoCambio(){ const t=document.getElementById('cg-tipo'); const box=document.getElementById('cg-rest-box'); if(box) box.style.display=(t&&t.value==='Comida')?'block':'none'; }
+function cgTipoCambio(){ const t=document.getElementById('cg-tipo'); const box=document.getElementById('cg-rest-box'); if(box) box.style.display=(t&&(t.value==='Comida'||t.value==='Minibar'))?'block':'none'; }
 function guardarCargo(num){
   const tipo=document.getElementById('cg-tipo').value;
   const desc=document.getElementById('cg-desc').value.trim();
   const monto=parseFloat(document.getElementById('cg-monto').value)||0;
   if(monto<=0){ alert('Escribe un monto mayor a 0'); return; }
-  const esComida=(tipo==='Comida');
+  const esComida=(tipo==='Comida'||tipo==='Minibar');
   const restEl=document.getElementById('cg-rest'); const rest=(esComida&&restEl)?restEl.value:'';
   const r=findRoom(num); const cargos=cargosDe(r).slice();
   const _cgId='cg'+Date.now();
