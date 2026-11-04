@@ -2122,7 +2122,7 @@ function checkin(num){
   var _cl=(clienteId?clientes().find(x=>x.id===clienteId):null)||{};
   modalEnvio({ titulo:'✅ Check-in listo', sub:'<b>'+esc(h)+'</b> quedó en la habitación '+num+'. Puedes enviarle un mensaje de bienvenida:', tel:_cl.telefono||'', correo:_cl.correo||'', asunto:'Bienvenido(a) a '+nombreHotelMsg(), mensaje:msgBienvenida(h, num) });
 }
-function forzarLibre(num){ if(!confirm('¿Poner la habitación '+num+' como LIBRE?\n\nSe quitará la ocupación y los datos del huésped (huésped, check-in, noches, consumos). Úsalo solo si hay un error o la habitación quedo mal marcada.')) return; updateRoom(num,{estado:'libre',nota:''}); cerrarModal(); render(); }
+function forzarLibre(num){ if(!confirm('¿Poner la habitación '+num+' como LIBRE?\n\nSe quitará la ocupación y los datos del huésped (huésped, check-in, noches, consumos). Úsalo solo si hay un error o la habitación quedo mal marcada.')) return; const _resp=prompt('¿Por qué marcas la habitación '+num+' como lista directamente, sin que la revise Ama de Llaves?\n\n(Puedes dejarlo en blanco. Esta nota solo saldrá en el corte detallado.)',''); const _nota=(_resp===null)?'':String(_resp).trim(); logKardex('listamanual',{hab:num, nota:_nota, detalle:'Habitación marcada lista a mano, sin pasar por Ama de Llaves'+(_nota?(' · Motivo: '+_nota):''), montoUsd:0, montoBs:0, metodo:''}); updateRoom(num,{estado:'libre',nota:''}); cerrarModal(); render(); }
 
 /* ---- Cálculo automático y desglose USD/Bs ---- */
 function desgloseBox(tarifa, noches, id, pct){
@@ -4244,18 +4244,20 @@ function corteDatos(fecha, turno){
   let anul = kardexAll().filter(k=>k.tipo==='anulacion' && diaKey(new Date(k.ts))===fecha);
   let cred = kardexAll().filter(k=>k.tipo==='credito' && diaKey(new Date(k.ts))===fecha);
   let autoriz = kardexAll().filter(k=>k.tipo==='autorizada' && diaKey(new Date(k.ts))===fecha);
+  let listaMan = kardexAll().filter(k=>k.tipo==='listamanual' && diaKey(new Date(k.ts))===fecha);
   if(turno && turno!=='todos'){
     pagos = pagos.filter(p=>turnoDePago(p)===turno);
     cargos = cargos.filter(k=>turnoDeTs(k.ts)===turno);
     anul = anul.filter(k=>turnoDeTs(k.ts)===turno);
     cred = cred.filter(k=>turnoDeTs(k.ts)===turno);
     autoriz = autoriz.filter(k=>turnoDeTs(k.ts)===turno);
+    listaMan = listaMan.filter(k=>turnoDeTs(k.ts)===turno);
   }
   let totBs=0, totUsd=0; const porRecep={};
   pagos.forEach(p=>{ totBs+=Number(p.montoBs)||0; totUsd+=Number(p.montoUsd)||0;
     const u=p.usuario||'(sin nombre)'; if(!porRecep[u]) porRecep[u]={n:0,bs:0,usd:0}; porRecep[u].n++; porRecep[u].bs+=Number(p.montoBs)||0; porRecep[u].usd+=Number(p.montoUsd)||0; });
   let credUsd=0, credBs=0; cred.forEach(k=>{ credUsd+=Number(k.credUsd||0); credBs+=Number(k.credBs||0); });
-  return {pagos:pagos, cargos:cargos, anul:anul, cred:cred, autoriz:autoriz, totBs:totBs, totUsd:totUsd, credUsd:credUsd, credBs:credBs, porRecep:porRecep};
+  return {pagos:pagos, cargos:cargos, anul:anul, cred:cred, autoriz:autoriz, listaMan:listaMan, totBs:totBs, totUsd:totUsd, credUsd:credUsd, credBs:credBs, porRecep:porRecep};
 }
 function imprimirCorte(turnoArg, _modo){
   const _turno = turnoArg && turnoArg!=='todos' ? turnoArg : null;
@@ -4283,6 +4285,8 @@ function imprimirCorte(turnoArg, _modo){
   let filasCred=''; D.cred.forEach(k=>{ filasCred+='<tr><td>'+(k.control?fmtControl(k.control):'—')+'</td><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td>'+esc(k.usuario||'—')+'</td><td class="r">'+fmtBs(k.credBs)+'</td><td class="r">'+fmtUSD(k.credUsd)+'</td></tr>'; });
   // Habitaciones autorizadas por el Sr. Carlos
   let filasAut=''; (D.autoriz||[]).forEach(k=>{ const modoTxt=k.autModo?autorizaModoTxt(k.autModo):(k.metodo||'—'); filasAut+='<tr><td>'+(k.control?fmtControl(k.control):'—')+'</td><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.autInvitado||'—')+'</td><td>'+esc(k.autMotivo||'—')+'</td><td>'+esc(modoTxt)+'</td><td>'+esc(k.usuario||'—')+'</td><td class="r">'+fmtUSD(k.autTarifaNormal||0)+'</td><td class="r">'+fmtUSD(k.autTarifaCobra||0)+'</td></tr>'; });
+  // Habitaciones marcadas listas a mano (sin pasar por Ama de Llaves)
+  let filasLisM=''; (D.listaMan||[]).forEach(k=>{ filasLisM+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.usuario||'—')+'</td><td>'+esc(k.nota||'—')+'</td></tr>'; });
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Corte '+cajaFecha+'</title>';
   html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:20px;color:#0d3b66;margin:0}h2{font-size:14px;color:#0d3b66;margin:18px 0 8px}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:10px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.tot td{font-weight:800;background:#f3f6fb}.cards{display:flex;gap:12px;margin-bottom:8px;flex-wrap:wrap}.card{flex:1;min-width:120px;border:1px solid #ccd;border-radius:8px;padding:10px 12px}.card .l{font-size:10.5px;color:#778;text-transform:uppercase}.card .n{font-size:18px;font-weight:800;color:#0d3b66}.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
   html+='<h1>'+esc(hotelNombre())+' · '+esc(tituloDoc('corte','Corte detallado del día'))+(_turno?(' · Turno '+turnoNombre(_turno)):'')+'</h1>'+hotelLinePrint();
@@ -4317,6 +4321,7 @@ function imprimirCorte(turnoArg, _modo){
   if(filasA){ html+='<h2>Cobros anulados en el día</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Motivo</th><th>Anulado por</th><th class="r">Bs</th></tr>'+filasA+'</table>'; }
   if(filasCred){ html+='<h2>CXC generadas (ventas a crédito)</h2><table><tr><th>N° Control</th><th>Hora</th><th>Habitación</th><th>Cliente</th><th>Detalle</th><th>Registrado por</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasCred+'<tr class="tot"><td colspan="6">TOTAL A CRÉDITO (POR COBRAR)</td><td class="r">'+fmtBs(D.credBs)+'</td><td class="r">'+fmtUSD(D.credUsd)+'</td></tr></table>'; }
   if(filasAut){ html+='<h2>👑 Habitaciones autorizadas por el Sr. Carlos</h2><table><tr><th>N° Control</th><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Invitado</th><th>Motivo</th><th>Cómo se cobra</th><th>Autorizado por (recepción)</th><th class="r">Tarifa normal</th><th class="r">Se cobra</th></tr>'+filasAut+'</table>'; }
+  if((D.listaMan||[]).length){ html+='<h2>🧹 Habitaciones marcadas listas a mano (sin pasar por Ama de Llaves)</h2><table><tr><th>Hora</th><th>Habitación</th><th>Marcada por</th><th>Motivo (nota)</th></tr>'+filasLisM+'</table>'; }
   html+=estadoHtml;
   if(impConfig().mostrarFirmas) html+='<div class="firmas"><div class="firma">Entregado por<br>(Recepcionista)</div><div class="firma">Recibido por<br>(Administración)</div></div>';
   html+=piePaginaHTML()+'</body></html>';
