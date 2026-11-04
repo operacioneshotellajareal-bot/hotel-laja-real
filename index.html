@@ -3382,6 +3382,8 @@ function polSetDesde(v){ polDesde=v; render(); }
 function polSetHasta(v){ polHasta=v; render(); }
 
 function _polDiaDe(iso){ return String(iso==null?'':iso).slice(0,10); }
+function docSigla(t){ return {V:'V',E:'E',P:'P',J:'J',G:'G'}[String(t||'').toUpperCase()]||''; }
+function docCorto(tipo,num){ var s=docSigla(tipo); return (s&&num)?(s+'-'+num):String(num||''); }
 function polRegistros(){
   // Toma los check-ins del kardex (cada huésped que entró) y cruza con la habitación y el cliente.
   const todos = kardexAll().filter(k=>k.tipo==='checkin');
@@ -3398,7 +3400,7 @@ function polRegistros(){
     let entrada = '', salida = '', nom = k.huesped||'', doc='', edad='', ec='', prof='', proc='', dest='';
     if(c){
       nom = (c.tipo==='empresa'? (c.nombre||'') : ((c.nombre||'')+' '+(c.apellido||'')).trim()) || nom;
-      doc = c.docNum?(docLabel(c.docTipo)+'-'+c.docNum):'';
+      doc = c.docNum?docCorto(c.docTipo,c.docNum):'';
       edad = c.edad||''; ec = c.estadoCivil||''; prof = c.ocupacion||''; proc = c.ciudad||''; dest = c.destino||'';
     }
     // entrada/salida desde la habitación (histórico del kardex no las guarda, se toman de la room si sigue)
@@ -3443,9 +3445,9 @@ function renderPolicial(){
   }
 
   h += '<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:12px;overflow:auto">';
-  h += '<table class="users-table"><tr><th>Fecha entrada</th><th>Apellidos y nombres</th><th>Edad</th><th>E. civil</th><th>Profesión u oficio</th><th>Procedencia</th><th>Destino</th><th>Cédula / pasaporte</th><th>Fecha salida</th><th>Hab.</th><th>Fecha del día</th></tr>';
+  h += '<table class="users-table"><tr><th>Fecha entrada</th><th>Apellidos y nombres</th><th style="width:34px;text-align:center;padding-left:4px;padding-right:4px">Edad</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">E. civil</th><th>Profesión u oficio</th><th>Procedencia</th><th>Destino</th><th style="width:86px;padding-left:6px;padding-right:6px">Cédula</th><th>Fecha salida</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">Hab.</th><th>Fecha del día</th></tr>';
   filas.forEach(f=>{
-    h += '<tr><td style="white-space:nowrap">'+esc(f.entrada||polFechaTxt(f.dia))+'</td><td><b>'+esc(f.nom||'—')+'</b></td><td>'+esc(f.edad||'—')+'</td><td>'+esc(f.ec||'—')+'</td><td>'+esc(f.prof||'—')+'</td><td>'+esc(f.proc||'—')+'</td><td>'+esc(f.dest||'—')+'</td><td>'+esc(f.doc||'—')+'</td><td style="white-space:nowrap">'+esc(f.salida||'—')+'</td><td>'+esc(f.hab||'—')+'</td><td style="white-space:nowrap">'+esc(polFechaTxt(f.dia))+'</td></tr>';
+    h += '<tr><td style="white-space:nowrap">'+esc(f.entrada||polFechaTxt(f.dia))+'</td><td><b>'+esc(f.nom||'—')+'</b></td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.edad||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.ec||'—')+'</td><td>'+esc(f.prof||'—')+'</td><td>'+esc(f.proc||'—')+'</td><td>'+esc(f.dest||'—')+'</td><td style="white-space:nowrap;padding-left:6px;padding-right:6px">'+esc(f.doc||'—')+'</td><td style="white-space:nowrap">'+esc(f.salida||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.hab||'—')+'</td><td style="white-space:nowrap">'+esc(polFechaTxt(f.dia))+'</td></tr>';
   });
   h += '</table></div>';
   return h;
@@ -3459,14 +3461,14 @@ function imprimirPolicial(){
   if(!filas.length){ alert('No hay huéspedes para imprimir en ese período.'); return; }
   let rows='';
   filas.forEach(f=>{
-    rows += '<tr><td>'+esc(f.entrada||polFechaTxt(f.dia))+'</td><td>'+esc(f.nom||'—')+'</td><td>'+esc(f.edad||'—')+'</td><td>'+esc(f.ec||'—')+'</td><td>'+esc(f.prof||'—')+'</td><td>'+esc(f.proc||'—')+'</td><td>'+esc(f.dest||'—')+'</td><td>'+esc(f.doc||'—')+'</td><td>'+esc(f.salida||'—')+'</td><td>'+esc(f.hab||'—')+'</td><td>'+esc(polFechaTxt(f.dia))+'</td></tr>';
+    rows += '<tr><td>'+esc(f.entrada||polFechaTxt(f.dia))+'</td><td>'+esc(f.nom||'—')+'</td><td style="text-align:center">'+esc(f.edad||'—')+'</td><td style="text-align:center">'+esc(f.ec||'—')+'</td><td>'+esc(f.prof||'—')+'</td><td>'+esc(f.proc||'—')+'</td><td>'+esc(f.dest||'—')+'</td><td style="text-align:center">'+esc(f.doc||'—')+'</td><td>'+esc(f.salida||'—')+'</td><td style="text-align:center">'+esc(f.hab||'—')+'</td><td>'+esc(polFechaTxt(f.dia))+'</td></tr>';
   });
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Reporte policial</title>';
   html+='<style>@page{size:letter portrait;margin:8mm}*{font-family:"Courier New",monospace;box-sizing:border-box}body{margin:0;padding:0;color:#000;font-size:9.5px}h1{font-size:12px;margin:0;text-align:center;text-transform:uppercase}.sub{font-size:9.5px;text-align:center;margin:2px 0 6px}table{width:100%;border-collapse:collapse;font-size:8.5px}th,td{border:1px solid #000;padding:1px 2px;text-align:left;white-space:nowrap;overflow:hidden}th{background:#eee;font-size:8.5px}.firmas{display:flex;gap:30px;margin-top:30px}.firma{flex:1;border-top:1px solid #000;padding-top:4px;font-size:9px;text-align:center}@media print{body{padding:0}}</style></head><body>';
   html+='<h1>'+esc(hotelNombre())+'</h1>';
   html+='<div class="sub">REPORTE DE HUÉSPEDES · '+esc(polTituloTexto())+'</div>';
   html+='<div class="sub">Generado: '+new Date().toLocaleString('es-VE')+'</div>';
-  html+='<table><tr><th>F. entrada</th><th>Apellidos y nombres</th><th>Edad</th><th>E. civil</th><th>Profesión u oficio</th><th>Procedencia</th><th>Destino</th><th>Cédula / pasaporte</th><th>F. salida</th><th>Hab.</th><th>Fecha del día</th></tr>'+rows+'</table>';
+  html+='<table><tr><th>F. entrada</th><th>Apellidos y nombres</th><th style="width:26px;text-align:center">Edad</th><th style="width:26px;text-align:center">E. civ.</th><th>Profesión u oficio</th><th>Procedencia</th><th>Destino</th><th style="width:70px">Cédula</th><th>F. salida</th><th style="width:34px;text-align:center">Hab.</th><th>Fecha del día</th></tr>'+rows+'</table>';
   html+='<div class="firmas"><div class="firma">Recepción</div><div class="firma">Revisado por</div></div>';
   html+='</body></html>';
   return imprimirHTML(html);
@@ -3475,7 +3477,7 @@ function imprimirPolicial(){
 function exportarPolicialXLS(){
   const filas = polRegistros();
   if(!filas.length){ alert('No hay huéspedes para exportar en ese período.'); return; }
-  const headers=['Fecha entrada','Apellidos y nombres','Edad','Estado civil','Profesión u oficio','Procedencia','Destino','Cédula / pasaporte','Fecha salida','Habitación','Fecha del día'];
+  const headers=['Fecha entrada','Apellidos y nombres','Edad','E. civil','Profesión u oficio','Procedencia','Destino','Cédula','Fecha salida','Hab.','Fecha del día'];
   const rows=filas.map(f=>[f.entrada||polFechaTxt(f.dia), f.nom||'', f.edad||'', f.ec||'', f.prof||'', f.proc||'', f.dest||'', f.doc||'', f.salida||'', f.hab||'', polFechaTxt(f.dia)]);
   _descargarXLS('reporte_policial_'+((polFiltro==='dia')?polDia:(polDesde+'_'+polHasta))+'.xls', headers, rows);
 }
