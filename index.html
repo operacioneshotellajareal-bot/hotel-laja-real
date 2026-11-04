@@ -101,6 +101,16 @@ label{font-size:13px;font-weight:600;color:#44526a;}
 .tabs-wrap.izq::before{content:'';position:absolute;top:0;left:0;width:38px;height:100%;pointer-events:none;opacity:0;transition:opacity .2s;z-index:2;background:linear-gradient(to left,rgba(244,246,250,0),var(--bg));}
 .tabs-wrap.izq::before{opacity:1;}
 .tabs{scroll-behavior:smooth;}
+/* ---- Chat: lista de contactos ---- */
+.ct-sel{background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:12px 14px;margin-bottom:14px}
+.ct-search{width:100%;padding:10px 13px;border-radius:10px;border:1.5px solid #dbe3ef;font-size:14px;margin-bottom:10px;box-sizing:border-box}
+.ct-grid{display:flex;gap:8px;flex-wrap:wrap;max-height:200px;overflow-y:auto}
+.ct-item{display:flex;align-items:center;gap:9px;background:#f3f6fb;border:1.5px solid transparent;border-radius:10px;padding:8px 13px;cursor:pointer;font-weight:600;font-size:13.5px;color:#2c3a4f}
+.ct-item:hover{background:#e8eef8}
+.ct-item.act{background:var(--azul);color:#fff}
+.ct-item .ct-badge{display:none;min-width:19px;height:19px;border-radius:10px;background:var(--rojo);color:#fff;font-size:11px;line-height:19px;text-align:center;font-weight:700;padding:0 5px}
+.ct-item.act .ct-badge{background:#fff;color:var(--azul)}
+.ct-vacio{color:#8893a5;font-size:13px;padding:6px 0}
 /* Botón flotante subir arriba */
 #btn-subir{position:fixed;right:18px;bottom:18px;width:46px;height:46px;border-radius:50%;background:var(--azul);color:#fff;border:none;font-size:20px;line-height:1;cursor:pointer;box-shadow:0 6px 18px rgba(13,59,102,.35);z-index:40;display:none;align-items:center;justify-content:center;}
 #btn-subir.ver{display:flex;}
@@ -2642,6 +2652,8 @@ let chatCanal='general';  // canal seleccionado
 let chatUltimoVisto={};   // por canal: marca de tiempo vista (por equipo)
 let _chatFocar=false;     // pedir foco en el cuadro de escribir (solo al abrir/cambiar)
 
+let chatFiltroContacto='';
+let _chatContactos=null;
 /* Módulos del hotel que pueden estar en el chat */
 const CHAT_MODULOS = [
   ['recepcion','Recepción'],
@@ -2652,6 +2664,35 @@ const CHAT_MODULOS = [
   ['dueno','Dueño']
 ];
 function chatEtiqueta(rol){ const m=CHAT_MODULOS.find(x=>x[0]===rol); return m?m[1]:(ROLES[rol]||rol); }
+/* ---- Chat: lista de contactos del rol actual ---- */
+function chatContactos(rol){
+  const out=[['general','👥 Todos']];
+  if(esMaster(rol)){
+    for(let i=0;i<CHAT_MODULOS.length;i++){ for(let j=i+1;j<CHAT_MODULOS.length;j++){ const a=CHAT_MODULOS[i][0], b=CHAT_MODULOS[j][0]; out.push([chatCanalModulo(a,b),'💬 '+chatEtiqueta(a)+' ↔ '+chatEtiqueta(b)]); } }
+  } else {
+    CHAT_MODULOS.forEach(m=>{ if(m[0]===rol) return; out.push([chatCanalModulo(rol,m[0]),'💬 '+chatEtiqueta(m[0])]); });
+  }
+  return out;
+}
+function chatNoLeidosCanal(canal, rol){
+  const visto=chatVisto(canal);
+  let n=0; chatMsgs().forEach(m=>{ if(m.canal===canal && m.rol!==rol && (m.ts||0)>visto) n++; });
+  return n;
+}
+function chatFiltro(v){ chatFiltroContacto=String(v||''); const g=document.getElementById('ct-grid'); if(g&&_chatContactos) g.innerHTML=_chatContactos(); const inp=document.getElementById('ct-search'); if(inp&&inp.value!==chatFiltroContacto) inp.value=chatFiltroContacto; }
+function chatPintarLista(){
+  const s=session(); if(!s) return ''; const rol=s.rol;
+  const filtro=(chatFiltroContacto||'').toLowerCase();
+  let conts=chatContactos(rol);
+  if(filtro) conts=conts.filter(ch=>ch[1].toLowerCase().indexOf(filtro)>=0);
+  if(!conts.length) return '<div class="ct-vacio">Nada por aquí. Prueba con otro nombre.</div>';
+  return conts.map(ch=>{
+    const act=(chatCanal===ch[0]);
+    const n=chatNoLeidosCanal(ch[0], rol);
+    return '<div class="ct-item '+(act?'act':'')+'" onclick="chatAbrirCanal(\''+ch[0]+'\')">'+esc(ch[1])+'<span class="ct-badge"'+(n?(' style="display:inline-block"'):'')+'>'+(n>9?'9+':n)+'</span></div>';
+  }).join('');
+}
+function chatAbrirCanal(canal){ chatCanal=canal; _chatFocar=true; render(); window.scrollTo(0,0); }
 
 function chatMsgs(){ const a=DB.get('chat',[]); return Array.isArray(a)?a:[]; }
 function chatGuardar(arr){ DB.set('chat', arr.slice(-800)); } // guarda los últimos 800 mensajes
@@ -2778,12 +2819,11 @@ function renderChatFull(){
   if(soportaNotifNavegador() && Notification.permission!=='granted') html+='<button class="btn-ghost" onclick="pedirPermisoNotif()">🔔 Activar avisos</button>';
   html+='<button class="btn-ghost" onclick="cerrarChat()">← Volver a la app</button></div></div>';
 
-  html+='<div class="tabs-wrap"><div class="tabs">';
-  canales.forEach(ch=>{
-    const act=(chatCanal===ch[0]);
-    html+='<div class="tab '+(act?'active':'')+'" onclick="chatCanal=\''+ch[0]+'\';_chatFocar=true;render();window.scrollTo(0,0)">'+esc(ch[1])+'</div>';
-  });
-  html+='</div></div>';
+  html+='<div class="ct-sel">';
+  html+='<input id="ct-search" class="ct-search" type="text" placeholder="🔍 Buscar persona o módulo…" value="'+escA(chatFiltroContacto||'')+'" oninput="chatFiltro(this.value)">';
+  html+='<div class="ct-grid" id="ct-grid"></div></div>';
+  _chatContactos=function(){ return chatPintarLista(); };
+  html+=_chatContactos();
 
   const msgs=chatMsgs().filter(m=>m.canal===chatCanal);
 
