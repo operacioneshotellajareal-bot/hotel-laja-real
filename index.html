@@ -326,11 +326,11 @@ const ROLES = {
   master:'Master / Dueño', admin:'Master / Dueño',
   recepcion:'Recepcionista', supervisor:'Supervisor de recepción',
   housekeeping:'Ama de Llaves', mantenimiento:'Mantenimiento',
-  administracion:'Administración'
+  administracion:'Administración', dueno:'Dueño'
 };
 function esMaster(rol){ return rol==='master'||rol==='admin'; }
 function rolOptions(sel){
-  const opts=[['recepcion','Recepcionista'],['supervisor','Supervisor de recepción'],['administracion','Administración (solo revisa cortes y reportes)'],['housekeeping','Ama de Llaves'],['mantenimiento','Mantenimiento'],['master','Master / Dueño']];
+  const opts=[['recepcion','Recepcionista'],['supervisor','Supervisor de recepción'],['administracion','Administración (solo revisa cortes y reportes)'],['housekeeping','Ama de Llaves'],['mantenimiento','Mantenimiento'],['dueno','Dueño (solo mira el panel con gráficos)'],['master','Master / Dueño']];
   return opts.map(o=>'<option value="'+o[0]+'"'+(o[0]===sel?' selected':'')+'>'+o[1]+'</option>').join('');
 }
 function countMasters(){ return DB.get('users',[]).filter(u=>esMaster(u.rol)).length; }
@@ -529,6 +529,7 @@ function render(){
   else if(rol==='housekeeping') renderHousekeeping();
   else if(rol==='mantenimiento') renderMantenimiento();
   else if(rol==='administracion') renderAdministracion();
+  else if(rol==='dueno') renderDueno();
   else renderAdmin();
   renderNotif();
   actualizarBadgeChat();
@@ -927,6 +928,112 @@ function exportarServicioXLS(){
   const rows=list.map(k=>[(k.control?fmtControl(k.control):''), fechaDDMMYYYY(diaKey(new Date(k.ts))), horaCorta(k.ts), turnoTxtTs(k.ts), k.restaurante||'', k.hab||'', k.huesped||'', k.desc||'', k.usuario||'', Number(k.cargoUsd||0).toFixed(2), Number(precioBs(k.cargoUsd||0)).toFixed(2)]);
   _descargarXLS('servicio_habitacion_'+servMes+(servRest?('_'+servRest.replace(/\s+/g,'_')):'')+'.xls', headers, rows);
 }
+/* ====== PANEL DEL DUEÑO (solo lectura, con gráficos) ====== */
+let duenoMes = diaKey().slice(0,7);
+function setDuenoMes(v){ duenoMes = v||diaKey().slice(0,7); render(); }
+function duenoIngresosDia(key){ let u=0,b=0; DB.get('pagos',[]).forEach(p=>{ if(p.dia===key){ u+=Number(p.montoUsd||0); b+=Number(p.montoBs||0); } }); return {usd:u,bs:b}; }
+function duenoIngresosMes(ym){ let u=0,b=0,n=0; DB.get('pagos',[]).forEach(p=>{ if(String(p.dia||'').slice(0,7)===ym){ u+=Number(p.montoUsd||0); b+=Number(p.montoBs||0); n++; } }); return {usd:u,bs:b,n:n}; }
+function duenoIngresosDias(dn){ const out=[]; const sem=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']; for(let i=dn-1;i>=0;i--){ const d=new Date(); d.setDate(d.getDate()-i); const key=diaKey(d); out.push({dia:key, label:sem[d.getDay()], num:d.getDate(), usd:duenoIngresosDia(key).usd}); } return out; }
+function duenoCiudades(){ const map={}; clientes().forEach(c=>{ const ciu=String(c.ciudad||'').trim(); if(!ciu) return; const k=ciu.toLowerCase(); if(!map[k]) map[k]={nombre:ciu,n:0}; map[k].n++; }); return Object.keys(map).map(k=>map[k]).sort((a,b)=>b.n-a.n); }
+function duenoCxcResumen(){ let totPend=0, venc=0, nPend=0, nVenc=0; cxc().forEach(e=>{ if(cxcPagada(e)) return; const s=cxcSaldo(e); totPend+=s; nPend++; if(cxcVencida(e)){ venc+=s; nVenc++; } }); return {totPend:totPend, venc:venc, nPend:nPend, nVenc:nVenc}; }
+function duenoDonut(pct, color){ pct=Math.max(0,Math.min(100,pct)); const r=54, circ=2*Math.PI*r, filled=circ*pct/100; let s='<svg viewBox="0 0 140 140" style="width:150px;height:150px">'; s+='<circle cx="70" cy="70" r="'+r+'" fill="none" stroke="#e9eef6" stroke-width="16"></circle>'; s+='<circle cx="70" cy="70" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="16" stroke-linecap="round" stroke-dasharray="'+filled+' '+(circ-filled)+'" transform="rotate(-90 70 70)"></circle>'; s+='<text x="70" y="66" text-anchor="middle" font-size="30" font-weight="800" fill="#0d3b66">'+pct+'%</text>'; s+='<text x="70" y="88" text-anchor="middle" font-size="12" fill="#8893a5">ocupación</text></svg>'; return s; }
+function renderDueno(){
+  const c=document.getElementById('content');
+  const hoy=hoyISO();
+  const ingHoy=duenoIngresosDia(hoy);
+  const ingMes=duenoIngresosMes(duenoMes);
+  const oc=datosOcupacionTipo().tot;
+  const cx=duenoCxcResumen();
+  const auts=autorizadasDelMes(duenoMes);
+  const dias=duenoIngresosDias(7);
+  const ciudades=duenoCiudades();
+  let h='';
+  h+='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px">';
+  h+='<div class="section-title" style="margin:0">👑 Panel del Dueño</div>';
+  h+='<div style="flex:1"></div>';
+  h+='<input type="month" value="'+escA(duenoMes)+'" onchange="setDuenoMes(this.value)" style="max-width:170px">';
+  h+='<button class="btn-primary" onclick="imprimirDueno()">🖨️ Imprimir / PDF</button></div>';
+  h+='<p style="font-size:13px;color:#8893a5;margin:0 0 16px;line-height:1.6">Resumen del hotel de un vistazo. Es una vista de <b>solo lectura</b>: aquí solo se mira, no se toca nada. Lo de <b>Hoy</b> es en tiempo real; lo del <b>Mes</b> usa el mes que elijas arriba.</p>';
+  /* --- Tarjetas HOY --- */
+  h+='<div class="section-title" style="font-size:15px">📅 Hoy</div>';
+  h+='<div class="stats">';
+  h+='<div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtUSD(ingHoy.usd)+'</div><div class="l">Ingresos de hoy (USD)</div></div>';
+  h+='<div class="stat" style="border-left-color:var(--azul2)"><div class="n" style="font-size:20px">'+fmtBs(ingHoy.bs)+'</div><div class="l">Ingresos de hoy (Bs)</div></div>';
+  h+='<div class="stat" style="border-left-color:var(--rojo)"><div class="n">'+oc.ocupadas+'</div><div class="l">Habitaciones ocupadas</div></div>';
+  h+='<div class="stat" style="border-left-color:#1d6b38"><div class="n">'+oc.libres+'</div><div class="l">Habitaciones libres</div></div></div>';
+  /* --- Tarjetas MES --- */
+  h+='<div class="section-title" style="font-size:15px">📈 Mes de '+esc(mesLabel(duenoMes))+'</div>';
+  h+='<div class="stats">';
+  h+='<div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtUSD(ingMes.usd)+'</div><div class="l">Ingresos del mes (USD)</div></div>';
+  h+='<div class="stat" style="border-left-color:var(--azul2)"><div class="n" style="font-size:20px">'+fmtBs(ingMes.bs)+'</div><div class="l">Ingresos del mes (Bs)</div></div>';
+  h+='<div class="stat" style="border-left-color:var(--azul)"><div class="n">'+ingMes.n+'</div><div class="l">Cobros registrados</div></div>';
+  h+='<div class="stat" style="border-left-color:#7c3aed"><div class="n">'+auts.length+'</div><div class="l">Autorizadas por el Sr. Carlos</div></div></div>';
+  /* --- CXC --- */
+  h+='<div class="section-title" style="font-size:15px">💳 Cuentas por cobrar (crédito)</div>';
+  h+='<div class="stats">';
+  h+='<div class="stat" style="border-left-color:var(--naranja)"><div class="n" style="font-size:20px">'+fmtUSD(cx.totPend)+'</div><div class="l">Por cobrar ('+cx.nPend+' cuentas)</div></div>';
+  h+='<div class="stat" style="border-left-color:var(--rojo)"><div class="n" style="font-size:20px">'+fmtUSD(cx.venc)+'</div><div class="l">Vencidas ('+cx.nVenc+' cuentas)</div></div></div>';
+  /* --- Gráficos: donut ocupación + barras ingresos 7 días --- */
+  h+='<div style="display:flex;gap:18px;flex-wrap:wrap;margin:6px 0 10px">';
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:16px 18px;flex:1;min-width:230px;display:flex;align-items:center;gap:14px">';
+  h+=duenoDonut(oc.pct, '#0d3b66');
+  h+='<div style="font-size:13px;color:#55637a;line-height:1.9"><div><b style="color:var(--rojo)">'+oc.ocupadas+'</b> ocupadas</div><div><b style="color:#1d6b38">'+oc.libres+'</b> libres</div><div><b>'+oc.otras+'</b> no disponibles</div><div style="color:#8893a5">de '+oc.total+' habitaciones</div></div></div>';
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:16px 18px;flex:2;min-width:300px">';
+  h+='<div style="font-weight:700;color:var(--azul);font-size:14px;margin-bottom:12px">Ingresos de los últimos 7 días (USD)</div>';
+  const maxD=Math.max(1, Math.max.apply(null, dias.map(d=>d.usd)));
+  h+='<div style="display:flex;align-items:flex-end;gap:8px;height:150px">';
+  dias.forEach(d=>{ const ph=Math.round(d.usd/maxD*120); h+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;justify-content:flex-end"><div style="font-size:10px;color:#55637a;white-space:nowrap">'+(d.usd>0?fmtUSD(d.usd).replace(/,00$/,''):'')+'</div><div title="'+fmtUSD(d.usd)+'" style="width:100%;max-width:40px;height:'+Math.max(3,ph)+'px;background:linear-gradient(180deg,#2a6fb0,#0d3b66);border-radius:5px 5px 0 0"></div><div style="font-size:10.5px;color:#8893a5;text-align:center;line-height:1.2">'+d.label+'<br>'+d.num+'</div></div>'; });
+  h+='</div></div></div>';
+  /* --- Autorizaciones por tipo + lista con nombres --- */
+  let g=0,m=0,cr=0; auts.forEach(k=>{ if(k.autModo==='gratis')g++; else if(k.autModo==='mitad')m++; else cr++; });
+  h+='<div class="section-title" style="font-size:15px">👑 Autorizaciones del Sr. Carlos — '+esc(mesLabel(duenoMes))+'</div>';
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:16px 18px;margin-bottom:16px">';
+  if(!auts.length){ h+='<div style="color:#8893a5;font-size:13px">No hay habitaciones autorizadas en '+esc(mesLabel(duenoMes))+'.</div>'; }
+  else{
+    const maxA=Math.max(1,g,m,cr);
+    [['Cortesía (gratis)',g,'var(--verde)'],['Mitad de precio',m,'var(--naranja)'],['A crédito',cr,'#b36b00']].forEach(row=>{ const w=Math.round(row[1]/maxA*100); h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="width:140px;font-size:12.5px;color:#55637a">'+row[0]+'</div><div style="flex:1;background:#eef2f8;border-radius:6px;height:24px;position:relative"><div style="width:'+w+'%;height:100%;background:'+row[2]+';border-radius:6px"></div><span style="position:absolute;left:8px;top:3px;font-size:12px;font-weight:700;color:#1c2430">'+row[1]+'</span></div></div>'; });
+    h+='<div style="font-weight:700;color:var(--azul);font-size:13.5px;margin:12px 0 8px">¿A nombre de quién?</div>';
+    h+='<div style="overflow-x:auto"><table class="users-table" style="margin:0"><tr><th>Día</th><th>Hab.</th><th>Invitado</th><th>Huésped</th><th>Cómo se cobra</th></tr>';
+    auts.forEach(k=>{ h+='<tr><td style="white-space:nowrap">'+esc(fechaDDMMYYYY(diaKey(new Date(k.ts))))+'</td><td>'+(k.hab||'—')+'</td><td><b>'+esc(k.autInvitado||'—')+'</b></td><td>'+esc(k.huesped||'—')+'</td><td style="font-size:12px">'+esc(k.autModo?autorizaModoTxt(k.autModo):'—')+'</td></tr>'; });
+    h+='</table></div>';
+  }
+  h+='</div>';
+  /* --- De dónde nos visitan --- */
+  h+='<div class="section-title" style="font-size:15px">📍 De dónde nos visitan</div>';
+  h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:16px 18px;margin-bottom:16px">';
+  if(!ciudades.length){ h+='<div style="color:#8893a5;font-size:13px">Todavía no hay ciudades registradas. Cuando Recepción anote la <b>ciudad de procedencia</b> de los huéspedes, aquí verás el ranking.</div>'; }
+  else{ const maxC=ciudades[0].n||1; ciudades.slice(0,10).forEach((ci,i)=>{ const w=Math.round(ci.n/maxC*100); h+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="width:150px;font-size:12.5px;color:#55637a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(i+1)+'. '+esc(ci.nombre)+'</div><div style="flex:1;background:#eef2f8;border-radius:6px;height:22px"><div style="width:'+Math.max(w,6)+'%;height:100%;background:linear-gradient(90deg,#2a6fb0,#0d3b66);border-radius:6px"></div></div><div style="width:42px;text-align:right;font-weight:700;color:#0d3b66">'+ci.n+'</div></div>'; }); }
+  h+='</div>';
+  c.innerHTML=h;
+  try{ setTimeout(ajustarTabs,30); }catch(e){}
+}
+function imprimirDueno(){
+  const hoy=hoyISO();
+  const ingHoy=duenoIngresosDia(hoy);
+  const ingMes=duenoIngresosMes(duenoMes);
+  const oc=datosOcupacionTipo().tot;
+  const cx=duenoCxcResumen();
+  const auts=autorizadasDelMes(duenoMes);
+  const ciudades=duenoCiudades();
+  let g=0,m=0,cr=0; auts.forEach(k=>{ if(k.autModo==='gratis')g++; else if(k.autModo==='mitad')m++; else cr++; });
+  const card=(l,n)=>'<div class="card"><div class="l">'+l+'</div><div class="n">'+n+'</div></div>';
+  let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Panel del Dueño</title>';
+  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:20px;color:#0d3b66;margin:0}h2{font-size:15px;color:#0d3b66;margin:20px 0 8px}.sub{color:#667;font-size:13px;margin:4px 0 16px}.cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px}.card{flex:1;min-width:130px;border:1px solid #ccd;border-radius:8px;padding:10px 12px}.card .l{font-size:10.5px;color:#778;text-transform:uppercase}.card .n{font-size:18px;font-weight:800;color:#0d3b66}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}th,td{border:1px solid #ccd;padding:5px 7px;text-align:left}th{background:#eef3fa;color:#44526a}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
+  html+='<h1>'+esc(hotelNombre())+' · 👑 Panel del Dueño</h1>'+hotelLinePrint();
+  html+='<div class="sub">Mes de <b>'+esc(mesLabel(duenoMes))+'</b> · Generado: '+new Date().toLocaleString('es-VE')+' · Tasa: '+fmtBs(tasa())+' / $1</div>';
+  html+='<h2>Hoy</h2><div class="cards">'+card('Ingresos hoy (USD)',fmtUSD(ingHoy.usd))+card('Ingresos hoy (Bs)',fmtBs(ingHoy.bs))+card('Ocupadas',oc.ocupadas)+card('Libres',oc.libres)+card('Ocupación',oc.pct+'%')+'</div>';
+  html+='<h2>Mes de '+esc(mesLabel(duenoMes))+'</h2><div class="cards">'+card('Ingresos mes (USD)',fmtUSD(ingMes.usd))+card('Ingresos mes (Bs)',fmtBs(ingMes.bs))+card('Cobros',ingMes.n)+card('Autorizadas',auts.length)+'</div>';
+  html+='<h2>Cuentas por cobrar</h2><div class="cards">'+card('Por cobrar',fmtUSD(cx.totPend)+' ('+cx.nPend+')')+card('Vencidas',fmtUSD(cx.venc)+' ('+cx.nVenc+')')+'</div>';
+  html+='<h2>👑 Autorizaciones del Sr. Carlos</h2><div class="cards">'+card('Cortesía (gratis)',g)+card('Mitad de precio',m)+card('A crédito',cr)+'</div>';
+  if(auts.length){ html+='<table><tr><th>Día</th><th>Hab.</th><th>Invitado</th><th>Huésped</th><th>Cómo se cobra</th></tr>'; auts.forEach(k=>{ html+='<tr><td>'+esc(fechaDDMMYYYY(diaKey(new Date(k.ts))))+'</td><td>'+(k.hab||'—')+'</td><td>'+esc(k.autInvitado||'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.autModo?autorizaModoTxt(k.autModo):'—')+'</td></tr>'; }); html+='</table>'; }
+  else html+='<p style="color:#888;font-size:12px">No hay habitaciones autorizadas en este mes.</p>';
+  html+='<h2>📍 De dónde nos visitan</h2>';
+  if(ciudades.length){ html+='<table><tr><th>#</th><th>Ciudad</th><th>Huéspedes</th></tr>'; ciudades.slice(0,15).forEach((ci,i)=>{ html+='<tr><td>'+(i+1)+'</td><td>'+esc(ci.nombre)+'</td><td>'+ci.n+'</td></tr>'; }); html+='</table>'; }
+  else html+='<p style="color:#888;font-size:12px">Todavía no hay ciudades registradas.</p>';
+  html+=piePaginaHTML()+'</body></html>';
+  return imprimirHTML(html);
+}
+
 /* ---- Centro de notificaciones (campanita desplegable) ---- */
 function notifItems(){
   const items=[];
