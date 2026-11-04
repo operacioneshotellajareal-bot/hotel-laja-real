@@ -362,7 +362,7 @@ function catalogoPermisos(rol){
   return PERMISOS_CATALOGO;
 }
 const ROLES_CONFIGURABLES=['recepcion','supervisor','housekeeping','mantenimiento'];
-const ROLES_ETIQUETA={recepcion:'Recepcionista', supervisor:'Supervisor de recepción', administracion:'Administración', housekeeping:'Ama de Llaves', mantenimiento:'Mantenimiento'};
+const ROLES_ETIQUETA={recepcion:'Recepcionista', supervisor:'Supervisor de recepción', administracion:'Administración', housekeeping:'Ama de Llaves', mantenimiento:'Mantenimiento', dueno:'Dueño'};
 function permisosDefault(rol){
   if(rol==='housekeeping') return {verPendientes:true, puedeMarcarLista:true, puedeReportarDano:true};
   if(rol==='mantenimiento') return {verMantenimiento:true, puedeResolver:true};
@@ -2648,7 +2648,8 @@ const CHAT_MODULOS = [
   ['supervisor','Supervisión'],
   ['administracion','Administración'],
   ['housekeeping','Ama de Llaves'],
-  ['mantenimiento','Mantenimiento']
+  ['mantenimiento','Mantenimiento'],
+  ['dueno','Dueño']
 ];
 function chatEtiqueta(rol){ const m=CHAT_MODULOS.find(x=>x[0]===rol); return m?m[1]:(ROLES[rol]||rol); }
 
