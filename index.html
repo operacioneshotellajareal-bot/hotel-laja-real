@@ -1262,7 +1262,7 @@ function pmLeer(prefix){
 }
 function updateRoom(num, patch){ const r=rooms(); const i=r.findIndex(x=>x.num===num); r[i]=Object.assign(r[i],patch); saveRooms(r); }
 function countBy(est){ return rooms().filter(r=>r.estado===est).length; }
-function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 /* ====== RECEPCIÓN ====== */
 let recepView='tablero';
@@ -2281,7 +2281,7 @@ function autorizaBadgeHTML(r){
     (r.autorizadaMotivo?('<div>Motivo: '+esc(r.autorizadaMotivo)+'</div>'):'')+'</div>';
 }
 function sumarDiasISO(iso, dias){ var p=(iso||'').split('-'); if(p.length!==3) return ''; var d=new Date(Number(p[0]),Number(p[1])-1,Number(p[2])); if(isNaN(d)) return ''; d.setDate(d.getDate()+(parseInt(dias)||0)); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-function fechaDDMMYYYY(iso){ var p=(iso||'').split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):(iso||'—'); }
+function fechaDDMMYYYY(iso){ var p=String(iso==null?'':iso).split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):(iso?String(iso):'—'); }
 function recalcCheckin(num){
   const tarifa = parseFloat(document.getElementById('m-tarifa').value)||0;
   const noches = parseInt(document.getElementById('m-noches').value)||1;
@@ -3381,7 +3381,7 @@ function polSetDia(v){ polDia=v; render(); }
 function polSetDesde(v){ polDesde=v; render(); }
 function polSetHasta(v){ polHasta=v; render(); }
 
-function _polDiaDe(iso){ return (iso||'').slice(0,10); }
+function _polDiaDe(iso){ return String(iso==null?'':iso).slice(0,10); }
 function polRegistros(){
   // Toma los check-ins del kardex (cada huésped que entró) y cruza con la habitación y el cliente.
   const todos = kardexAll().filter(k=>k.tipo==='checkin');
@@ -3404,7 +3404,7 @@ function polRegistros(){
     // entrada/salida desde la habitación (histórico del kardex no las guarda, se toman de la room si sigue)
     if(r){ entrada = r.checkin||''; salida = r.salida||''; }
     if(!entrada && c && Array.isArray(c.historial)){ const h=c.historial.find(x=>x.hab===k.hab); if(h){ entrada = h.entrada?fechaDDMMYYYY(_polDiaDe(h.entrada)):''; salida = h.salida?fechaDDMMYYYY(_polDiaDe(h.salida)):''; } }
-    filas.push({ ts:k.ts, dia:dia, hab:k.hab, nom:nom, doc:doc, edad:edad, ec:ec, prof:prof, proc:proc, dest:dest, entrada:entrada, salida:salida });
+    filas.push({ ts:k.ts, dia:String(dia==null?'':dia), hab:String(k.hab==null?'':k.hab), nom:String(nom==null?'':nom), doc:String(doc==null?'':doc), edad:String(edad==null?'':edad), ec:String(ec==null?'':ec), prof:String(prof==null?'':prof), proc:String(proc==null?'':proc), dest:String(dest==null?'':dest), entrada:String(entrada==null?'':entrada), salida:String(salida==null?'':salida) });
   });
   filas.sort((a,b)=> new Date(a.ts)-new Date(b.ts));
   return filas;
