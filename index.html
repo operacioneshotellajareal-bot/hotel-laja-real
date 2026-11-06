@@ -202,7 +202,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-sh
 <!-- ===== LOGIN ===== -->
 <div id="view-login">
   <div class="login-card">
-    <h1>🏨 Gestión Hotel</h1>
+    <h1 style="text-align:center">🏨</h1>
     <p class="sub">Sistema de operaciones · 65 habitaciones</p>
     <div class="field"><label>Usuario</label><input id="in-user" autocomplete="username" placeholder="ej: recepcion"></div>
     <div class="field"><label>Contraseña</label><input id="in-pass" type="password" autocomplete="current-password" placeholder="••••"></div>
@@ -1773,9 +1773,12 @@ function reservaRows(q){
     var _racs=acompDe(r); if(_racs.length){ h+='<div style="font-size:12.5px;color:#55637a;margin-bottom:6px">👫 '+(_racs.length===1?'Acompañante: ':('Acompañantes ('+_racs.length+'): '))+esc(_racs.map(function(a){return (a.nombre||'(sin nombre)')+(a.docNum?(' · '+docLabel(a.docTipo)+' '+a.docNum):'');}).join(' / '))+'</div>'; }
     if(r.estado==='ingresada' && r.hab) h+='<div style="font-size:12.5px;color:#1f6b35;margin-bottom:6px">✔️ Ingresado en la habitación '+esc(String(r.hab))+'</div>';
     if(r.notas) h+='<div style="font-size:12.5px;color:#8893a5;margin-bottom:6px;font-style:italic">“'+esc(r.notas)+'”</div>';
+    var _ant=resAnticipoUsd(r);
+    if(_ant>0) h+='<div style="font-size:12.5px;color:#1d6b38;background:#eaf7ee;border:1px solid #bfe4cc;border-radius:8px;padding:6px 10px;margin-bottom:6px">💰 Anticipo ya pagado: <b>'+fmtUSD(_ant)+'</b> ('+fmtBs(precioBs(_ant))+')</div>';
     h+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">';
     if(r.estado==='pendiente'){
       h+='<button class="btn-green" style="padding:8px 14px" onclick="checkinReservaModal(\''+r.loc+'\')">✅ Hacer check-in</button>';
+      h+='<button class="btn-gray" style="padding:8px 14px" onclick="cobrarAnticipoModal(\''+r.loc+'\')">💵 Cobrar anticipo</button>';
       h+='<button class="btn-gray" style="padding:8px 14px" onclick="enviarLocalizador(\''+r.loc+'\')">📲 Enviar localizador</button>';
       h+='<button class="btn-gray" style="padding:8px 14px" onclick="nuevaReservaModal(\''+r.loc+'\')">✏️ Editar</button>';
       h+='<button class="btn-gray" style="padding:8px 14px" onclick="cancelarReserva(\''+r.loc+'\')">❌ Cancelar</button>';
@@ -1901,6 +1904,8 @@ function checkinReservaModal(loc){
   b+='<h2>Check-in · '+esc(r.loc)+'</h2>';
   b+='<div style="font-size:14px;margin-bottom:4px"><b>'+esc(nom)+'</b></div>';
   if(r.docNum) b+='<div style="font-size:12.5px;color:#8893a5;margin-bottom:10px">'+esc(docLabel(r.docTipo)+' '+r.docNum)+'</div>';
+  var _antCk=resAnticipoUsd(r);
+  if(_antCk>0) b+='<div style="font-size:13px;color:#1d6b38;background:#eaf7ee;border:1px solid #bfe4cc;border-radius:8px;padding:8px 11px;margin-bottom:10px">💰 Este huésped ya pagó un anticipo de <b>'+fmtUSD(_antCk)+'</b> ('+fmtBs(precioBs(_antCk))+'). Recuérdalo al cobrarle el saldo.</div>';
   b+='<label class="lbl">Habitación a asignar</label>';
   b+='<select id="cr-hab" class="inp">';
   orden.forEach(x=>{ const marca=(r.tipoPreferido && (x.tipo||'')===r.tipoPreferido)?' ⭐':''; b+='<option value="'+x.num+'">Hab. '+x.num+' · '+esc(x.tipo||'')+marca+'</option>'; });
@@ -1951,6 +1956,54 @@ function cancelarReserva(loc){
 function eliminarReserva(loc){
   if(!confirm('¿Eliminar definitivamente la reserva '+loc+'? Esta acción no se puede deshacer.')) return;
   let list=reservas().filter(x=>x.loc!==loc); saveReservas(list); render();
+}
+function resAnticipoUsd(r){ if(!r) return 0; if(Array.isArray(r.anticipos)) return r.anticipos.reduce((s,a)=>s+Number(a.montoUsd||0),0); return Number(r.anticipoUsd||0); }
+function cobrarAnticipoModal(loc){
+  if(guardTurno()) return;
+  const r=reservas().find(x=>x.loc===loc); if(!r){ alert('No se encontró la reserva.'); return; }
+  const nom=((r.nombre||'')+' '+(r.apellido||'')).trim()||r.nombre||'Huésped';
+  const yaAnt=resAnticipoUsd(r);
+  let b='<button class="close" onclick="cerrarModal()">×</button>';
+  b+='<h2>💵 Cobrar anticipo · '+esc(r.loc)+'</h2>';
+  b+='<div style="font-size:13px;color:#44526a;margin:-4px 0 10px"><b>'+esc(nom)+'</b>'+(r.docNum?(' · '+esc(docLabel(r.docTipo)+' '+r.docNum)):'')+'</div>';
+  b+='<div style="font-size:12.5px;color:#2a4a73;background:#eef6ff;border:1px solid #cfe0f5;border-radius:10px;padding:9px 12px;margin-bottom:10px">Cobras un adelanto antes de que llegue el huésped. Entra a la caja normal con su número de control. El día del check-in te recordará cuánto ya pagó.</div>';
+  if(yaAnt>0) b+='<div style="font-size:12.5px;color:#1d6b38;margin-bottom:8px">Ya tiene un anticipo de <b>'+fmtUSD(yaAnt)+'</b>. Lo que cobres ahora se suma.</div>';
+  b+='<div style="display:flex;gap:8px"><div class="field" style="flex:2"><label>Monto del anticipo</label><input id="ant-monto" type="number" min="0" step="0.01" placeholder="0"></div>';
+  b+='<div class="field" style="flex:1"><label>Moneda</label><select id="ant-moneda"><option value="USD">USD</option><option value="Bs">Bs</option></select></div></div>';
+  let opts=getMetodos().map(m=>'<option value="'+escA(m)+'">'+esc(m)+'</option>').join('');
+  b+='<div class="field"><label>Forma de pago</label><select id="ant-metodo">'+opts+'</select></div>';
+  b+='<div class="field"><label>Nota (opcional)</label><input id="ant-nota" placeholder="Ej: transferencia Banesco"></div>';
+  b+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cobrarAnticipoConfirm(\''+r.loc+'\')">Cobrar anticipo</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  showModal(b);
+}
+function cobrarAnticipoConfirm(loc){
+  if(guardTurno()) return;
+  const list=reservas(); const r=list.find(x=>x.loc===loc); if(!r){ alert('No se encontró la reserva.'); return; }
+  const monto=parseFloat((document.getElementById('ant-monto')||{}).value)||0;
+  if(!(monto>0)){ alert('Escribe el monto del anticipo.'); return; }
+  const moneda=(document.getElementById('ant-moneda')||{}).value||'USD';
+  const metodo=(document.getElementById('ant-metodo')||{}).value||'';
+  const nota=((document.getElementById('ant-nota')||{}).value||'').trim();
+  const totalUsd = moneda==='USD'? monto : (monto/tasa());
+  const totalBs = precioBs(totalUsd);
+  const nom=((r.nombre||'')+' '+(r.apellido||'')).trim()||r.nombre||'Huésped';
+  const now=new Date();
+  const ctrl=siguienteControl();
+  const s=session();
+  const pagos=DB.get('pagos',[]);
+  pagos.unshift({ id:Date.now(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
+    hab:0, huesped:nom, concepto:'Anticipo reserva '+r.loc+(nota?(' · '+nota):''), metodo:metodo,
+    metodos:[{metodo:metodo, montoUsd:totalUsd, montoBs:totalBs}],
+    clienteId:'', clienteDoc:(r.docNum||''), clienteCiudad:'',
+    montoUsd:totalUsd, montoBs:totalBs, tasa:tasa(), usuario:(s?s.nombre:'') });
+  DB.set('pagos', pagos);
+  if(!Array.isArray(r.anticipos)) r.anticipos=[];
+  r.anticipos.push({ts:now.toISOString(), montoUsd:totalUsd, montoBs:totalBs, metodo:metodo, nota:nota, control:ctrl, usuario:(s?s.nombre:'')});
+  r.anticipoUsd=resAnticipoUsd(r);
+  saveReservas(list);
+  try{ logKardex('pago',{hab:0, huesped:nom, detalle:'Anticipo reserva '+r.loc+(nota?(' · '+nota):''), montoUsd:totalUsd, montoBs:totalBs, metodo:metodo}); }catch(err){}
+  cerrarModal(); render();
+  alert('Anticipo cobrado.\nReserva: '+r.loc+'\nHuésped: '+nom+'\nControl N° '+fmtControl(ctrl)+'\nMonto: '+fmtUSD(totalUsd)+' · '+fmtBs(totalBs)+'\n\nQuedará recordado para el día del check-in.');
 }
 /* ====== MODAL HABITACIÓN (recepción) ====== */
 function abrirHab(num){
@@ -3300,6 +3353,10 @@ async function borrarTodoDesdeCero(){
   if(!confirm('Esto NO se puede deshacer.\n\n¿Confirmas borrar todo definitivamente?')) return;
   try{ if(typeof CLOUD!=='undefined' && CLOUD.enabled){ await CLOUD.clearAll(); } }catch(e){}
   try{ SYNC_KEYS.forEach(k=> localStorage.removeItem('hotel_'+k)); }catch(e){}
+  /* Dejar TODO en blanco, tambien el logo/nombre/eslogan, en este equipo */
+  try{ ['hotel','impresion','promos','restaurantes'].forEach(k=> localStorage.removeItem('hotel_'+k)); }catch(e){}
+  /* y tambien en la nube, para que al recargar NO se vuelva a bajar el logo viejo */
+  try{ if(typeof CLOUD!=='undefined' && CLOUD.enabled){ CLOUD.ready=true; await CLOUD.push('hotel', {}); } }catch(e){}
   try{ localStorage.removeItem('hotel_session'); localStorage.removeItem('hotel_ultimoRespaldo'); }catch(e){}
   try{ sessionStorage.removeItem('hotel_avisoRespaldo'); }catch(e){}
   alert('Listo. Se borró todo.\n\nLa app se reiniciará limpia para que la vuelvas a configurar. Entra con el usuario admin y la contraseña admin.');
@@ -4961,14 +5018,18 @@ function renderCxcListaHTML(){
     if(e.telefono) h+='<div style="font-size:11.5px;color:#8893a5;margin-top:2px">📞 '+esc(e.telefono)+'</div>';
     if(e.notas) h+='<div style="font-size:12px;color:#44526a;background:#f6f8fc;border-radius:8px;padding:6px 9px;margin-top:6px">📝 '+esc(e.notas)+'</div>';
     if(abon>0) h+='<div style="font-size:12px;color:#1d6b38;margin-top:6px">Abonado: <b>'+fmtUSD(abon)+'</b> de '+fmtUSD(e.montoUsd)+'</div>';
+    var _nc=(Array.isArray(e.cargos)?e.cargos.length:0);
+    if(_nc>0){ var _tc=e.cargos.reduce(function(s,c){return s+Number(c.montoUsd||0);},0); h+='<div style="font-size:12px;color:#7a5b00;margin-top:4px">➕ '+_nc+' cargo'+(_nc>1?'s':'')+' agregado'+(_nc>1?'s':'')+' después: <b>+'+fmtUSD(_tc)+'</b></div>'; }
     h+='</div>';
     h+='<div style="text-align:right;min-width:150px"><div style="font-size:11px;color:#8893a5">'+(pagada?'COBRADA':'SALDO')+'</div><div style="font-size:22px;font-weight:800;color:'+(pagada?'var(--verde)':borde)+';line-height:1.1">'+(pagada?'✅':fmtUSD(saldo))+'</div>'+(!pagada?('<div style="font-size:12px;color:#8893a5">'+fmtBs(precioBs(saldo))+'</div>'):'')+'</div>';
     h+='</div>';
     h+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">';
     if(!pagada) h+='<button class="btn-green" style="padding:6px 12px" onclick="cxcAbonarModal(\''+e.id+'\')">💵 Registrar abono / pago</button>';
+    if(!pagada) h+='<button class="btn-orange" style="padding:6px 12px" onclick="cxcAgregarCargoModal(\''+e.id+'\')">➕ Agregar cargo</button>';
     if(!pagada) h+='<button class="btn-primary" style="padding:6px 12px" onclick="cxcMarcarPagada(\''+e.id+'\')">✓ Marcar pagada</button>';
     else h+='<button class="btn-gray" style="padding:6px 12px" onclick="cxcReabrir(\''+e.id+'\')">Reabrir</button>';
     if((Array.isArray(e.abonos)?e.abonos.length:0)>0) h+='<button class="btn-ghost" style="padding:6px 12px" onclick="cxcVerAbonos(\''+e.id+'\')">📄 Ver abonos</button>';
+    if((Array.isArray(e.cargos)?e.cargos.length:0)>0) h+='<button class="btn-ghost" style="padding:6px 12px" onclick="cxcVerCargos(\''+e.id+'\')">📋 Ver cargos</button>';
     h+='<button class="btn-ghost" style="padding:6px 12px" onclick="cxcNuevaModal(\''+e.id+'\')">✏️ Editar</button>';
     h+='<button class="btn-ghost" style="padding:6px 12px" onclick="cxcEliminar(\''+e.id+'\')">🗑️</button>';
     h+='</div></div>';
@@ -5084,6 +5145,49 @@ function cxcAbonarConfirm(id){
   // Queda registrado también en el Kardex del turno como cobro
   try{ logKardex('pago',{huesped:e.nombre||'', detalle:'Abono a CXC'+(e.concepto?(' · '+e.concepto):'')+(nota?(' · '+nota):''), montoUsd:monto, montoBs:precioBs(monto), metodo:metodo}); }catch(err){}
   cerrarModal(); render();
+}
+function cxcAgregarCargoModal(id){
+  const e=cxc().find(x=>x.id===id); if(!e) return;
+  const saldo=cxcSaldo(e);
+  let b='<button class="close" onclick="cerrarModal()">×</button>';
+  b+='<h2>➕ Agregar cargo</h2>';
+  b+='<div style="font-size:13px;color:#44526a;margin:-4px 0 8px"><b>'+esc(e.nombre||'')+'</b>'+(e.docRef?(' <span style="color:#8893a5">('+esc(e.docRef)+')</span>'):'')+'</div>';
+  b+='<div style="font-size:12.5px;color:#7a5b00;background:#fff8e1;border:1px solid #f0d58a;border-radius:10px;padding:9px 12px;margin-bottom:10px">Suma un nuevo consumo a esta misma cuenta (ej: otra habitación o más noches). El saldo por cobrar aumenta y queda en el historial.</div>';
+  b+='<div style="font-size:12.5px;color:#55637a;margin-bottom:8px">Saldo actual: <b>'+fmtUSD(saldo)+'</b> · Total de la cuenta: <b>'+fmtUSD(e.montoUsd)+'</b></div>';
+  b+='<div class="field"><label>Concepto del nuevo cargo</label><input id="cxc-cg-concepto" placeholder="Ej: 2 noches más, Hab. 305"></div>';
+  b+='<div class="field"><label>Monto a agregar (USD)</label><input id="cxc-cg-monto" type="number" step="0.01" min="0" placeholder="0"></div>';
+  b+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cxcAgregarCargoConfirm(\''+id+'\')">Agregar a la cuenta</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  showModal(b);
+}
+function cxcAgregarCargoConfirm(id){
+  const l=cxc(); const e=l.find(x=>x.id===id); if(!e) return;
+  const concepto=((document.getElementById('cxc-cg-concepto')||{}).value||'').trim();
+  const monto=Number((document.getElementById('cxc-cg-monto')||{}).value||0);
+  if(!(monto>0)){ alert('Escribe el monto a agregar (mayor que 0).'); return; }
+  const s=session();
+  if(!Array.isArray(e.cargos)) e.cargos=[];
+  e.cargos.push({ts:new Date().toISOString(), concepto:(concepto||'Cargo agregado'), montoUsd:monto, montoBs:precioBs(monto), usuario:(s?s.nombre:'')});
+  e.montoUsd=Number(e.montoUsd||0)+monto;
+  saveCxc(l);
+  try{ logKardex('credito',{hab:(e.hab||0), huesped:e.nombre||'', clienteId:(e.clienteId||''), control:(e.control||''), detalle:'Cargo agregado a CXC'+(e.control?(' · Control N° '+fmtControl(e.control)):'')+' · '+(concepto||'Cargo'), montoUsd:monto, montoBs:precioBs(monto), metodo:'Por cobrar (CXC)'}); }catch(err){}
+  cerrarModal(); render();
+  alert('Cargo agregado a la cuenta de '+(e.nombre||'')+'.\nConcepto: '+(concepto||'Cargo agregado')+'\nMonto: +'+fmtUSD(monto)+'\nNuevo saldo: '+fmtUSD(cxcSaldo(e)));
+}
+function cxcVerCargos(id){
+  const e=cxc().find(x=>x.id===id); if(!e) return;
+  let b='<button class="close" onclick="cerrarModal()">×</button>';
+  b+='<h2>📋 Cargos de '+esc(e.nombre||'')+'</h2>';
+  const cg=Array.isArray(e.cargos)?e.cargos:[];
+  if(cg.length===0){ b+='<div style="color:#8893a5;font-size:13px">Sin cargos agregados.</div>'; }
+  else{
+    b+='<div style="overflow-x:auto"><table class="users-table" style="box-shadow:none"><tr><th>Fecha</th><th>Concepto</th><th>Agregó</th><th style="text-align:right">Monto</th></tr>';
+    cg.forEach(c=>{ b+='<tr><td>'+esc(fechaHoraCorta(c.ts))+'</td><td style="font-size:12px;color:#44526a">'+esc(c.concepto||'')+'</td><td style="font-size:12px;color:#55637a">'+esc(c.usuario||'')+'</td><td style="text-align:right">+'+fmtUSD(c.montoUsd)+'<div style="font-size:11px;color:#8893a5">'+fmtBs(c.montoBs||precioBs(c.montoUsd))+'</div></td></tr>'; });
+    const _tc=cg.reduce((s,c)=>s+Number(c.montoUsd||0),0);
+    b+='</table></div>';
+    b+='<div style="margin-top:10px;font-size:13px">Total agregado: <b>+'+fmtUSD(_tc)+'</b> · Total de la cuenta: <b>'+fmtUSD(e.montoUsd)+'</b> · Saldo: <b>'+fmtUSD(cxcSaldo(e))+'</b></div>';
+  }
+  b+='<div class="divider"></div><div class="actions"><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>';
+  showModal(b);
 }
 function cxcVerAbonos(id){
   const e=cxc().find(x=>x.id===id); if(!e) return;
@@ -5882,7 +5986,7 @@ function pintarMarca(){
   if(brand){ brand.innerHTML = (h.logo?('<img src="'+h.logo+'" alt="logo" style="height:'+tsz+'px;'+twCss+'object-fit:contain;border-radius:6px;vertical-align:middle;margin-right:6px">'):'🏨 ')+'<span style="vertical-align:middle">'+esc(nom)+'</span>'; }
   try{ document.title = nom; }catch(e){}
   const lh = document.querySelector('.login-card h1');
-  if(lh){ lh.innerHTML = (h.logo?('<img src="'+h.logo+'" alt="logo" style="height:'+lsz+'px;'+lwCss+'object-fit:contain;border-radius:12px;display:block;margin:0 auto 10px">'):'🏨 ')+esc(nom); }
+  if(lh){ lh.innerHTML = (h.logo?('<img src="'+h.logo+'" alt="logo" style="height:'+lsz+'px;'+lwCss+'object-fit:contain;border-radius:12px;display:block;margin:0 auto 6px">'):'🏨'); lh.style.textAlign='center'; }
   const ls = document.querySelector('.login-card p.sub');
   if(ls){ ls.innerText = h.eslogan || 'Sistema de operaciones · 65 habitaciones'; }
 }
