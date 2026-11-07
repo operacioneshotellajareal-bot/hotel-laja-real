@@ -2054,6 +2054,7 @@ function abrirHab(num){
     body += '<div class="field"><label>Cédula del huésped (obligatoria)</label><div style="display:flex;gap:8px;align-items:center"><input id="m-cedula" placeholder="Escríbela: si ya existe aparece, si no, se registra" oninput="buscarCedula()" style="flex:1"><button class="btn-ghost" type="button" style="padding:9px 12px;white-space:nowrap" onclick="limpiarCedula()">Limpiar</button></div></div>';
     body += '<div id="m-cedula-res" style="font-size:13px;margin:-4px 0 10px"></div>';
     body += '<div class="field"><label>O elegir un cliente ya registrado</label><select id="m-cliente" onchange="seleccionarCliente()"><option value="">— Buscar por cédula arriba —</option>'+clienteCheckinOptions()+'</select></div>';
+    body += '<div id="m-cxc-box" style="display:none"></div>';
     body += '<div class="field"><label>Nombre del huésped</label><input id="m-huesped" placeholder="Nombre y apellido"></div>';
     body += '<div style="font-size:12px;color:#8893a5;margin:-4px 0 12px">Todo huésped queda registrado al ingresar. Si es su primera vez, se guarda automáticamente con su cédula.</div>';
     body += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:110px"><label>Edad</label><input id="m-edad" type="number" min="0" max="120" placeholder="ej: 35"></div>';
@@ -2142,19 +2143,21 @@ function limpiarCedula(){
   const res=document.getElementById('m-cedula-res'); if(res) res.innerHTML='';
   const sel=document.getElementById('m-cliente'); if(sel){ sel.value=''; if(sel.dataset) sel.dataset.auto='0'; }
   const box=document.getElementById('m-guardar-box'); if(box) box.style.display='flex';
+  try{cxcCheckinAlert();}catch(e){}
 }
 function seleccionarCliente(){
   const sel=document.getElementById('m-cliente'); if(!sel) return;
   const id=sel.value;
   const box=document.getElementById('m-guardar-box');
   const inp=document.getElementById('m-huesped');
-  if(!id){ if(box) box.style.display='flex'; return; }
+  if(!id){ if(box) box.style.display='flex'; try{cxcCheckinAlert();}catch(e){} return; }
   const cedEl=document.getElementById('m-cedula');
   const cedTxt=cedEl?(cedEl.value||'').trim():'';
   const cId=clientes().find(x=>x.id===id);
   if(cedTxt && cId && normDoc(cId.docNum)!==normDoc(cedTxt) && normDoc(cedTxt).length>=5 && normDoc(cId.docNum).indexOf(normDoc(cedTxt))<0){
     sel.value='';
     if(box) box.style.display='flex';
+    try{cxcCheckinAlert();}catch(e){}
     return;
   }
   const c=clientes().find(x=>x.id===id);
@@ -2162,14 +2165,30 @@ function seleccionarCliente(){
   const er=document.getElementById('m-empresaref'); if(er && c && c.tipo!=='empresa' && (c.empresaRef||'').trim()){ er.value=c.empresaRef; autoLlenarEmpresaCheckin(); }
   const chk=document.getElementById('m-guardar'); if(chk) chk.checked=false;
   if(box) box.style.display='none';
+  try{cxcCheckinAlert();}catch(e){}
 }
 function normDoc(s){ return (s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function normTel(s){ return String(s||'').replace(/\D/g,''); }
+function normMail(s){ return String(s||'').trim().toLowerCase(); }
+function nombreCliente(c){ if(!c) return ''; return (c.tipo==='empresa'?(c.nombre||''):((c.nombre||'')+' '+(c.apellido||'')).trim())||'(sin nombre)'; }
+/* Busca si cedula/telefono/correo ya pertenecen a OTRO cliente. Devuelve un mensaje para mostrar, o '' si no hay repetido. */
+function clienteDuplicado(docTipo, docNum, telefono, correo, excluirId){
+  const nd=normDoc(docNum), nt=normTel(telefono), nm=normMail(correo);
+  const list=clientes();
+  for(let i=0;i<list.length;i++){
+    const c=list[i]; if(excluirId && c.id===excluirId) continue;
+    if(nd && normDoc(c.docNum)===nd) return 'Ya existe un cliente con esa cédula/documento:\n» '+nombreCliente(c);
+    if(nt && nt.length>=6 && normTel(c.telefono)===nt) return 'Ese teléfono ya lo tiene otro cliente:\n» '+nombreCliente(c);
+    if(nm && normMail(c.correo)===nm) return 'Ese correo ya lo tiene otro cliente:\n» '+nombreCliente(c);
+  }
+  return '';
+}
 function buscarCedula(){
   const inp=document.getElementById('m-cedula'); if(!inp) return;
   const q=normDoc(inp.value);
   const res=document.getElementById('m-cedula-res');
   const sel=document.getElementById('m-cliente');
-  if(!q){ if(res) res.innerHTML=''; return; }
+  if(!q){ if(res) res.innerHTML=''; try{cxcCheckinAlert();}catch(e){} return; }
   const list=clientes().filter(c=>normDoc(c.docNum).includes(q));
   if(list.length===0){
     if(sel){ sel.value=''; }
@@ -2177,6 +2196,7 @@ function buscarCedula(){
     const inp=document.getElementById('m-huesped');
     if(inp && list.length===0 && q.length>=5 && sel && sel.dataset && sel.dataset.auto==='1'){ inp.value=''; sel.dataset.auto='0'; }
     if(res) res.innerHTML='<span style="color:#b5651d">No hay ningún cliente con esa cédula. Puedes registrarlo marcando “Guardar este huésped”.</span>';
+    try{cxcCheckinAlert();}catch(e){}
     return;
   }
   const c = list.find(x=>normDoc(x.docNum)===q) || list[0];
@@ -2320,6 +2340,24 @@ function checkin(num){
       abrirEstadia(clienteId||'', en, noches, tar);
     });
   }
+  // ¿Mandar esta habitación a una CXC existente del cliente? (a crédito)
+  var _cxcChk=document.getElementById('m-cxc-mandar');
+  if(_cxcChk && _cxcChk.checked){
+    var _cualEl=document.getElementById('m-cxc-cual');
+    var _cxcId=_cualEl?_cualEl.value:'';
+    var _ll=cxc(); var _e=_ll.find(function(x){return x.id===_cxcId;});
+    if(!_e){ var _ced2=(document.getElementById('m-cedula')?(document.getElementById('m-cedula').value||'').trim():''); var _pend=cxcPendientesDeCliente(clienteId||'', _ced2); _e=_pend[0]; }
+    if(_e){
+      var _hospUsd=Math.round((Number(tarifaEf||0)*noches)*100)/100;
+      var _ctrlC=siguienteControl();
+      if(!Array.isArray(_e.cargos)) _e.cargos=[];
+      _e.cargos.push({ts:new Date().toISOString(), concepto:'Hospedaje Hab. '+num+' · '+noches+' noche(s) a '+fmtUSD(tarifaEf)+'/noche', montoUsd:_hospUsd, montoBs:precioBs(_hospUsd), control:_ctrlC, hab:num, usuario:(session()?session().nombre:'')});
+      _e.montoUsd=Number(_e.montoUsd||0)+_hospUsd;
+      saveCxc(_ll);
+      updateRoom(num,{creditoCxc:true, creditoCxcId:_e.id, creditoCxcControl:_ctrlC});
+      try{ logKardex('credito',{hab:num, huesped:h, clienteId:clienteId||'', control:_ctrlC, detalle:'Hospedaje Hab. '+num+' a crédito → CXC de '+(_e.nombre||'')+' · Control N° '+fmtControl(_ctrlC)+' · '+noches+' noche(s) · '+fmtUSD(_hospUsd), credUsd:_hospUsd, credBs:precioBs(_hospUsd), montoUsd:0, montoBs:0, metodo:'Crédito (CXC)'}); }catch(err){}
+    }
+  }
   cerrarModal(); render();
   var _cl=(clienteId?clientes().find(x=>x.id===clienteId):null)||{};
   modalEnvio({ titulo:'✅ Check-in listo', sub:'<b>'+esc(h)+'</b> quedó en la habitación '+num+'. Puedes enviarle un mensaje de bienvenida:', tel:_cl.telefono||'', correo:_cl.correo||'', asunto:'Bienvenido(a) a '+nombreHotelMsg(), mensaje:msgBienvenida(h, num) });
@@ -2404,9 +2442,10 @@ function guardarTarifaRecep(num){
 function pedirCheckout(num){
   const r = findRoom(num);
   const noches = r.noches||1; const hosp = Number(r.tarifa||0)*noches;
+  const enCxc = !!r.creditoCxc; const hospCobro = enCxc?0:hosp;
   const pend = cargosDe(r).filter(c=>!c.pagado);
   const consUsd = pend.reduce((s,c)=>s+Number(c.montoUsd||0),0);
-  const desc = descUsd(r); const totUsd = hosp - desc + consUsd;
+  const desc = enCxc?0:descUsd(r); const totUsd = hospCobro - desc + consUsd;
   const abonos = Array.isArray(r.abonos)?r.abonos:[];
   const abonoUsd = abonos.reduce((s,a)=>s+Number(a.montoUsd||0),0);
   const saldoUsd = Math.max(0, totUsd - abonoUsd);
@@ -2414,6 +2453,7 @@ function pedirCheckout(num){
   let body = '<button class="close" onclick="abrirHab('+num+')">×</button>';
   body += '<h2>Recibo · Hab. '+num+'</h2>';
   body += '<div class="rstate" style="color:#55637a">'+esc(r.huesped||'—')+'</div>';
+  if(enCxc) body += '<div style="background:#fff4e5;border:1px solid #f0c070;border-radius:10px;padding:10px 12px;margin:8px 0;font-size:12.5px;color:#8a5200">💳 El hospedaje de esta habitación está <b>a crédito en CXC</b> (Control N° '+fmtControl(r.creditoCxcControl)+'). Aquí no se vuelve a cobrar el hospedaje.</div>';
   if(c){ const cr=clienteResumen(c);
     body += '<div style="background:#eef6ff;border-radius:10px;padding:12px 14px;margin:10px 0;font-size:13px">';
     body += '<div style="font-weight:700;color:var(--azul);margin-bottom:4px">Datos del cliente'+(cr.tipo==='empresa'?' (Empresa)':'')+'</div>';
@@ -2426,7 +2466,7 @@ function pedirCheckout(num){
   body += '<div style="background:#f3f6fb;border-radius:10px;padding:16px">';
   body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Tipo</span><span>'+(r.tipo||'')+'</span></div>';
   body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Entrada</span><span>'+(r.checkin||'—')+'</span></div>';
-  body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Tarifa × noches</span><span>'+fmtUSD(r.tarifa)+' × '+noches+' = '+fmtUSD(hosp)+'</span></div>';
+  body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Tarifa × noches</span><span>'+(enCxc?('a crédito en CXC (Control '+fmtControl(r.creditoCxcControl)+')'):(fmtUSD(r.tarifa)+' × '+noches+' = '+fmtUSD(hosp)))+'</span></div>';
   if(r.promoTitulo) body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>Promoción</span><span>'+esc(r.promoTitulo)+'</span></div>';
   if(desc>0.009) body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px;color:var(--verde)"><span>Descuento '+promoPct(r)+'%</span><span>- '+fmtUSD(desc)+'</span></div>';
   pend.forEach(cg=>{ body += '<div style="display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px"><span>'+esc(cg.tipo+(cg.desc?' · '+cg.desc:''))+'</span><span>'+fmtUSD(cg.montoUsd)+'</span></div>'; });
@@ -2455,7 +2495,7 @@ function quitarCoronaHab(num){
 function limpiarAutorizacionHab(num){ updateRoom(num,{autorizada:false, autorizadaModo:'', autorizadaInvitado:'', autorizadaMotivo:'', autorizadaPor:'', autorizadaTarifaNormal:0}); }
 function confirmCheckout(num){
   limpiarAutorizacionHab(num);
-  updateRoom(num,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0});
+  updateRoom(num,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, creditoCxc:false, creditoCxcId:'', creditoCxcControl:0});
   cerrarModal(); render();
 }
 function checkoutSinCobro(num){
@@ -2468,9 +2508,10 @@ function cobrarYCheckout(num){
   if(guardTurno()) return;
   const r = findRoom(num);
   const noches = r.noches||1; const hosp = Number(r.tarifa||0)*noches;
+  const enCxc = !!r.creditoCxc; const hospCobro = enCxc?0:hosp;
   const pend = cargosDe(r).filter(c=>!c.pagado);
   const consUsd = pend.reduce((s,c)=>s+Number(c.montoUsd||0),0);
-  const desc = descUsd(r); const totUsd = hosp - desc + consUsd;
+  const desc = enCxc?0:descUsd(r); const totUsd = hospCobro - desc + consUsd;
   const abonos = Array.isArray(r.abonos)?r.abonos:[];
   const abonoUsd = abonos.reduce((s,a)=>s+Number(a.montoUsd||0),0);
   const saldoUsd = Math.max(0, totUsd - abonoUsd);
@@ -2479,10 +2520,10 @@ function cobrarYCheckout(num){
   const detAb = abonoUsd>0 ? (' (ya adelantó '+fmtUSD(abonoUsd)+')') : '';
   if(saldoUsd<=0.009){
     // Ya estaba todo pagado por adelantado: no se cobra nada más
-    if(!confirm('Esta cuenta ya quedó cubierta con los adelantos ('+fmtUSD(abonoUsd)+'). No hay saldo por cobrar.\n\n¿Hacer el check-out?')) return;
-    const det0 = noches+' noche(s)'+(consUsd>0?' + consumos '+fmtUSD(consUsd):'')+' · pagado por adelantado'+detAb;
-    logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:det0, montoUsd:0, montoBs:0, metodo:'Pagado por adelantado'});
-    cerrarEstadia(r.clienteId||'', num, {noches:noches, montoUsd:0, metodo:'Pagado por adelantado'});
+    if(!confirm((enCxc?'El hospedaje de esta habitación ya está en CXC a crédito.':'Esta cuenta ya quedó cubierta con los adelantos ('+fmtUSD(abonoUsd)+').')+' No hay saldo por cobrar aquí.\n\n¿Hacer el check-out?')) return;
+    const det0 = noches+' noche(s)'+(consUsd>0?' + consumos '+fmtUSD(consUsd):'')+(enCxc?' · hospedaje a crédito en CXC (Control '+fmtControl(r.creditoCxcControl)+')':' · pagado por adelantado')+detAb;
+    logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:det0, montoUsd:0, montoBs:0, metodo:(enCxc?'Hospedaje en CXC':'Pagado por adelantado')});
+    cerrarEstadia(r.clienteId||'', num, {noches:noches, montoUsd:0, metodo:(enCxc?'Hospedaje en CXC':'Pagado por adelantado')});
     confirmCheckout(num); return;
   }
   const pm=pmLeer('co'); if(!pm.ok){ alert(pm.msg); return; }
@@ -4375,9 +4416,22 @@ function enviarACxCConfirm(numsStr){
   });
   const concepto='Hospedaje a crédito · '+partes.join(', ')+(cargosDet.length?(' + '+cargosDet.length+' consumo(s)'):'');
   const l=cxc(); const s=session();
-  l.unshift({ id:'cx'+Date.now()+Math.random().toString(36).slice(2,5), control:ctrl, tipo:tipo, nombre:nombre, docRef:doc, telefono:tel,
-    concepto:concepto, hab:g.nums.join(', '), montoUsd:g.saldo, fecha:hoyISO(), vencimiento:venc, notas:nota,
-    abonos:[], creadoPor:(s?s.nombre:''), origen:'cobrar', habitaciones:habitaciones, cargosDetalle:cargosDet });
+  const _prev=cxcPendientesDeCliente(r0.clienteId||'', (c&&c.docNum)?c.docNum:'');
+  let _consolidado=false;
+  if(_prev.length){
+    const _e=l.find(function(x){return x.id===_prev[0].id;});
+    if(_e){
+      if(!Array.isArray(_e.cargos)) _e.cargos=[];
+      _e.cargos.push({ts:now.toISOString(), concepto:concepto, montoUsd:g.saldo, montoBs:precioBs(g.saldo), control:ctrl, hab:g.nums.join(', '), usuario:(s?s.nombre:'')});
+      _e.montoUsd=Number(_e.montoUsd||0)+g.saldo;
+      _consolidado=true;
+    }
+  }
+  if(!_consolidado){
+    l.unshift({ id:'cx'+Date.now()+Math.random().toString(36).slice(2,5), control:ctrl, tipo:tipo, nombre:nombre, docRef:doc, telefono:tel,
+      concepto:concepto, hab:g.nums.join(', '), montoUsd:g.saldo, fecha:hoyISO(), vencimiento:venc, notas:nota,
+      abonos:[], creadoPor:(s?s.nombre:''), origen:'cobrar', habitaciones:habitaciones, cargosDetalle:cargosDet });
+  }
   saveCxc(l);
   logKardex('credito', {hab:g.nums.join(', '), huesped:nombre, clienteId:r0.clienteId||'', control:ctrl,
     detalle:'Enviado a CXC · N° control '+fmtControl(ctrl)+' · '+concepto, credUsd:g.saldo, credBs:precioBs(g.saldo), montoUsd:0, montoBs:0, metodo:'Crédito (por cobrar)'});
@@ -4387,7 +4441,7 @@ function enviarACxCConfirm(numsStr){
     updateRoom(r.num,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0});
   });
   cerrarModal(); render();
-  alert('Cuenta enviada a CXC.\nN° de control: '+fmtControl(ctrl)+'\nDeuda: '+fmtUSD(g.saldo)+'\n\nQuedó en la pestaña "CXC" y aparece en el corte del turno.');
+  alert((_consolidado?'Se agregó a la cuenta CXC de '+nombre+' (una sola cuenta).':'Cuenta enviada a CXC.')+'\nN° de control: '+fmtControl(ctrl)+'\nDeuda: '+fmtUSD(g.saldo)+'\n\nQuedó en la pestaña "CXC" y aparece en el corte del turno.');
 }
 function extenderEstadiaModal(num){
   const r=findRoom(num); if(!r||r.estado!=='ocupada'){ alert('Esa habitación no está ocupada.'); return; }
@@ -4937,6 +4991,36 @@ function toggleCxcAdmin(){ const h=hotel(); h.cxcAdmin=(h.cxcAdmin===false); sav
 function cxcAbon(e){ return (Array.isArray(e.abonos)?e.abonos:[]).reduce((s,a)=>s+Number(a.montoUsd||0),0); }
 function cxcSaldo(e){ return Math.max(0, Number(e.montoUsd||0)-cxcAbon(e)); }
 function cxcPagada(e){ return cxcSaldo(e)<=0.009; }
+function cxcPendientesDeCliente(clienteId, docNum){
+  const dn=normDoc(docNum);
+  return cxc().filter(function(e){
+    if(cxcPagada(e)) return false;
+    if(clienteId && e.clienteId && e.clienteId===clienteId) return true;
+    if(dn && dn.length>=5){ const ed=normDoc(e.docRef); if(ed && (ed===dn || ed.indexOf(dn)>=0 || dn.indexOf(ed)>=0)) return true; }
+    return false;
+  });
+}
+function cxcCheckinAlert(){
+  const box=document.getElementById('m-cxc-box'); if(!box) return;
+  const sel=document.getElementById('m-cliente'); const cedEl=document.getElementById('m-cedula');
+  const cid=sel?sel.value:''; const ced=cedEl?(cedEl.value||'').trim():'';
+  let docNum=ced;
+  if(cid){ const c=clientes().find(x=>x.id===cid); if(c) docNum=c.docNum||ced; }
+  const pend=cxcPendientesDeCliente(cid, docNum);
+  if(!pend.length){ box.style.display='none'; box.innerHTML=''; return; }
+  const tot=pend.reduce((s,e)=>s+cxcSaldo(e),0);
+  const primary=pend[0];
+  const varias=pend.length>1;
+  let h='<div style="background:#fff4e5;border:1px solid #f0c070;border-radius:12px;padding:12px 14px;margin:4px 0 12px">';
+  h+='<div style="font-weight:800;color:#a23b3b;font-size:14px">⚠️ Este cliente ya debe '+fmtUSD(tot)+' en CXC</div>';
+  h+='<div style="font-size:12.5px;color:#7a5b00;margin-top:3px">Cuenta de <b>'+esc(primary.nombre||'')+'</b>'+(varias?(' · tiene '+pend.length+' cuentas separadas'):'')+'.</div>';
+  h+='<label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;font-weight:700;color:#8a5200"><input type="checkbox" id="m-cxc-mandar" style="width:auto;margin:0" onchange="cxcCheckinToggle()"> Mandar esta habitación a su cuenta CXC (a crédito)</label>';
+  h+='<input type="hidden" id="m-cxc-cual" value="'+escA(primary.id)+'">';
+  h+='<div id="m-cxc-cual-box" style="display:none;margin-top:8px"><div style="font-size:12px;color:#8a5200">El hospedaje se sumará a su misma cuenta, con su propio número de control. En el check-out no se vuelve a cobrar.</div>'+(varias?('<div style="font-size:12px;color:#a23b3b;margin-top:4px">Tiene '+pend.length+' cuentas separadas; se sumará a una sola.</div>'):'')+'</div>';
+  h+='</div>';
+  box.innerHTML=h; box.style.display='block';
+}
+function cxcCheckinToggle(){ const chk=document.getElementById('m-cxc-mandar'); const b=document.getElementById('m-cxc-cual-box'); if(chk&&b) b.style.display=chk.checked?'block':'none'; }
 function cxcVencida(e){ if(cxcPagada(e)) return false; if(!e.vencimiento) return false; return String(e.vencimiento)<hoyISO(); }
 function cxcNormDoc(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
 function cxcPendientesDeCliente(cli){
@@ -5180,8 +5264,8 @@ function cxcVerCargos(id){
   const cg=Array.isArray(e.cargos)?e.cargos:[];
   if(cg.length===0){ b+='<div style="color:#8893a5;font-size:13px">Sin cargos agregados.</div>'; }
   else{
-    b+='<div style="overflow-x:auto"><table class="users-table" style="box-shadow:none"><tr><th>Fecha</th><th>Concepto</th><th>Agregó</th><th style="text-align:right">Monto</th></tr>';
-    cg.forEach(c=>{ b+='<tr><td>'+esc(fechaHoraCorta(c.ts))+'</td><td style="font-size:12px;color:#44526a">'+esc(c.concepto||'')+'</td><td style="font-size:12px;color:#55637a">'+esc(c.usuario||'')+'</td><td style="text-align:right">+'+fmtUSD(c.montoUsd)+'<div style="font-size:11px;color:#8893a5">'+fmtBs(c.montoBs||precioBs(c.montoUsd))+'</div></td></tr>'; });
+    b+='<div style="overflow-x:auto"><table class="users-table" style="box-shadow:none"><tr><th>Fecha</th><th>Control</th><th>Hab.</th><th>Concepto</th><th>Agregó</th><th style="text-align:right">Monto</th></tr>';
+    cg.forEach(c=>{ b+='<tr><td>'+esc(fechaHoraCorta(c.ts))+'</td><td style="font-size:12px">'+(c.control?esc(fmtControl(c.control)):'—')+'</td><td style="font-size:12px">'+(c.hab?esc(String(c.hab)):'—')+'</td><td style="font-size:12px;color:#44526a">'+esc(c.concepto||'')+'</td><td style="font-size:12px;color:#55637a">'+esc(c.usuario||'')+'</td><td style="text-align:right">+'+fmtUSD(c.montoUsd)+'<div style="font-size:11px;color:#8893a5">'+fmtBs(c.montoBs||precioBs(c.montoUsd))+'</div></td></tr>'; });
     const _tc=cg.reduce((s,c)=>s+Number(c.montoUsd||0),0);
     b+='</table></div>';
     b+='<div style="margin-top:10px;font-size:13px">Total agregado: <b>+'+fmtUSD(_tc)+'</b> · Total de la cuenta: <b>'+fmtUSD(e.montoUsd)+'</b> · Saldo: <b>'+fmtUSD(cxcSaldo(e))+'</b></div>';
@@ -5207,10 +5291,9 @@ function cxcVerAbonos(id){
 function cxcMarcarPagada(id){
   const l=cxc(); const e=l.find(x=>x.id===id); if(!e) return;
   const saldo=cxcSaldo(e);
-  if(saldo>0.009){ if(!confirm('Falta por cobrar '+fmtUSD(saldo)+'. ¿Registrar ese monto como pagado y cerrar la cuenta?')) return;
-    const s=session(); if(!Array.isArray(e.abonos)) e.abonos=[];
-    e.abonos.push({ts:new Date().toISOString(), montoUsd:saldo, montoBs:precioBs(saldo), metodo:'Saldo final', nota:'Cierre de la cuenta', usuario:(s?s.nombre:'')});
-    try{ logKardex('pago',{huesped:e.nombre||'', detalle:'Pago final CXC'+(e.concepto?(' · '+e.concepto):''), montoUsd:saldo, montoBs:precioBs(saldo), metodo:'Saldo final'}); }catch(err){}
+  if(saldo>0.009){
+    alert('No puedes marcar esta cuenta como pagada.\n\nTodavía falta por cobrar '+fmtUSD(saldo)+' ('+fmtBs(precioBs(saldo))+').\n\nUsa el botón "Registrar abono / pago" para cobrar lo que falta. Cuando el saldo llegue a $0, la cuenta se marca como cobrada sola.');
+    return;
   }
   saveCxc(l); render();
 }
@@ -5550,6 +5633,8 @@ function renderClientes(){
   h += '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px">';
   h += '<div class="field" style="flex:1;min-width:240px;max-width:380px;margin:0"><input id="cl-buscar" placeholder="Buscar por código, cédula, nombre, teléfono o ciudad…" value="'+escA(clientBuscar)+'" oninput="filtrarClientes()"></div>';
   h += '<button class="btn-primary" style="padding:8px 14px" onclick="imprimirResumenHuespedes()">Imprimir resumen</button>';
+  h += '<button class="btn-primary" style="padding:8px 14px" onclick="imprimirReporteInvitados()">Reporte de invitados</button>';
+  h += '<button class="btn-ghost" style="padding:8px 14px" onclick="exportarInvitadosXLS()">Invitados a Excel</button>';
   h += '<button class="btn-ghost" style="padding:8px 14px" onclick="exportarClientesCSV()">Exportar a Excel</button>';
   h += '<button class="btn-ghost" style="padding:8px 14px" onclick="abrirImportarClientes()">Importar lista</button>';
   h += '<button class="btn-ghost" style="padding:8px 14px" onclick="descargarPlantillaClientes()">Descargar plantilla (Excel)</button>';
@@ -5589,6 +5674,44 @@ function imprimirResumenHuespedes(){
   html+='<tr class="tot"><td colspan="5">TOTALES</td><td class="c">'+totEst+'</td><td class="c">'+totNoches+'</td><td class="r">'+fmtUSD(totUsd)+'</td><td></td></tr></table>';
   html+=piePaginaHTML()+'</body></html>';
   return imprimirHTML(html);
+}
+/* ===== Reporte de invitados / acompañantes (todos los clientes) ===== */
+function recopilarInvitados(){
+  const out=[];
+  clientes().forEach(function(c){
+    const acs=Array.isArray(c.acompanantes)?c.acompanantes:[];
+    acs.forEach(function(a){
+      if(!(a.nombre||'').trim() && !(a.docNum||'').trim()) return;
+      out.push({ nombre:(a.nombre||'').trim(), docTipo:a.docTipo||'', docNum:(a.docNum||'').trim(), hab:a.hab||'', fecha:a.fecha||'', huesped:nombreCliente(c) });
+    });
+  });
+  out.sort(function(x,y){ return String(y.fecha||'').localeCompare(String(x.fecha||'')); });
+  return out;
+}
+function imprimirReporteInvitados(){
+  const inv=recopilarInvitados();
+  if(!inv.length){ alert('Todavía no hay invitados / acompañantes registrados.'); return; }
+  let filas='';
+  inv.forEach(function(a){
+    const doc=a.docNum?((docLabel(a.docTipo)||'Doc')+' '+a.docNum):'—';
+    filas+='<tr><td>'+esc(a.nombre||'(sin nombre)')+'</td><td>'+esc(doc)+'</td><td class="c">'+esc(a.hab?String(a.hab):'—')+'</td><td>'+esc(a.huesped||'—')+'</td><td>'+(a.fecha?fmtFecha(a.fecha):'—')+'</td></tr>';
+  });
+  let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Reporte de invitados</title>';
+  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:19px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 16px}table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{border:1px solid #ccd;padding:6px 8px;text-align:left}th{background:#eef3fa;color:#44526a}.c{text-align:center}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
+  const _hl=hotel(); const _lsz=Math.max(40,(parseInt(_hl.logoSize)||52)+6); const _lwv=parseInt(_hl.logoWidth)||0; const _lw=_lwv>0?(_lwv+'px'):'auto';
+  const _logo=(_hl.logo && impConfig().mostrarLogo)?('<img src="'+_hl.logo+'" alt="logo" style="height:'+_lsz+'px;width:'+_lw+';max-width:280px;object-fit:contain;border-radius:10px;flex:0 0 auto">'):'';
+  html+='<div style="display:flex;align-items:center;gap:14px">'+_logo+'<div><h1>'+esc(hotelNombre())+' · '+esc(tituloDoc('invitados','Reporte de invitados'))+'</h1>'+hotelLinePrint()+'</div></div>';
+  html+='<div class="sub">'+inv.length+' invitado(s) / acompañante(s) · Generado: '+new Date().toLocaleString('es-VE')+'</div>';
+  html+='<table><tr><th>Invitado / Acompañante</th><th>Documento</th><th class="c">Hab.</th><th>Registrado con (huésped)</th><th>Fecha</th></tr>'+filas+'</table>';
+  html+=piePaginaHTML()+'</body></html>';
+  return imprimirHTML(html);
+}
+function exportarInvitadosXLS(){
+  const inv=recopilarInvitados();
+  if(!inv.length){ alert('Todavía no hay invitados / acompañantes registrados.'); return; }
+  const headers=['Invitado','Documento','Habitacion','Huesped','Fecha'];
+  const rows=inv.map(function(a){ return [a.nombre||'', (a.docNum?((docLabel(a.docTipo)||'Doc')+' '+a.docNum):''), (a.hab?String(a.hab):''), a.huesped||'', (a.fecha?fmtFecha(a.fecha):'')]; });
+  _descargarXLS('reporte_invitados.xls', headers, rows);
 }
 function _csvDelim(text){
   const first=(text.split(/\r?\n/)[0]||'');
@@ -5710,7 +5833,8 @@ function guardarCliente(){
   if(!nombre){ alert(tipo==='empresa'?'Escribe el nombre de la empresa':'Escribe el nombre'); return; }
   if(correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)){ alert('El correo no parece válido'); return; }
   const list=clientes();
-  if(docNum && list.find(c=>c.docNum===docNum && c.docTipo===docTipo)){ alert('Ya existe un cliente con ese documento'); return; }
+  const _dup=clienteDuplicado(docTipo, docNum, telefono, correo, null);
+  if(_dup){ alert(_dup); return; }
   const nuevoId='c'+Date.now();
   const nuevo={id:nuevoId, tipo:tipo, nombre:nombre, apellido:apellido, docTipo:docTipo, docNum:docNum, correo:correo, ocupacion:ocupacion, ciudad:ciudad, telefono:telefono, direccion:direccion, notas:'', historial:[], creado:new Date().toISOString()};
   if(tipo==='empresa'){
@@ -5763,6 +5887,11 @@ function guardarEdicionCliente(id){
   if(!nombre){ alert('El nombre no puede quedar vacío'); return; }
   const correo=document.getElementById('ec-correo').value.trim();
   if(correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)){ alert('El correo no parece válido'); return; }
+  const _edDocTipo=document.getElementById('ec-doctipo').value;
+  const _edDocNum=document.getElementById('ec-docnum').value.trim();
+  const _edTel=(document.getElementById('ec-telefono')?document.getElementById('ec-telefono').value.trim():'');
+  const _edDup=clienteDuplicado(_edDocTipo, _edDocNum, _edTel, correo, id);
+  if(_edDup){ alert(_edDup); return; }
   list[i]=Object.assign(list[i],{
     tipo:document.getElementById('ec-tipo').value,
     nombre:nombre, apellido:document.getElementById('ec-apellido').value.trim(),
