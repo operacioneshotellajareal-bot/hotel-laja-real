@@ -2247,11 +2247,12 @@ function abrirHab(num){
     body += '</div>';
   } else if(r.estado==='libre'){
     limpiaCedulaPendiente=true;
-    body += '<div class="field"><label>Documento del huésped (obligatorio)</label><div style="display:flex;gap:8px;align-items:center"><select id="m-doctipo" style="flex:0 0 auto;width:auto;min-width:130px"><option value="V">Cédula (V)</option><option value="E">Extranjero (E)</option><option value="P">Pasaporte (P)</option><option value="J">RIF (J) · empresa</option></select><input id="m-cedula" placeholder="Escríbelo: si ya existe aparece, si no, se registra" oninput="buscarCedula()" style="flex:1"><button class="btn-ghost" type="button" style="padding:9px 12px;white-space:nowrap" onclick="limpiarCedula()">Limpiar</button></div></div>';
+    body += '<div class="field"><label>Documento del huésped (obligatorio)</label><div style="display:flex;gap:8px;align-items:center"><select id="m-doctipo" onchange="toggleDocTipoCheckin()" style="flex:0 0 auto;width:auto;min-width:130px"><option value="V">Cédula (V)</option><option value="E">Extranjero (E)</option><option value="P">Pasaporte (P)</option><option value="J">RIF (J) · empresa</option></select><input id="m-cedula" placeholder="Escríbelo: si ya existe aparece, si no, se registra" oninput="buscarCedula()" style="flex:1"><button class="btn-ghost" type="button" style="padding:9px 12px;white-space:nowrap" onclick="limpiarCedula()">Limpiar</button></div></div>';
     body += '<div id="m-cedula-res" style="font-size:13px;margin:-4px 0 10px"></div>';
     body += '<div class="field"><label>O elegir un cliente ya registrado</label><select id="m-cliente" onchange="seleccionarCliente()"><option value="">— Buscar por cédula arriba —</option>'+clienteCheckinOptions()+'</select></div>';
     body += '<div id="m-cxc-box" style="display:none"></div>';
-    body += '<div class="field"><label>Nombre del huésped</label><input id="m-huesped" placeholder="Nombre y apellido"></div>';
+    body += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:140px"><label id="m-nombre-lbl">Nombre del huésped</label><input id="m-nombre" placeholder="Nombre"></div>';
+    body += '<div class="field" id="m-apellido-wrap" style="flex:1;min-width:140px"><label>Apellido</label><input id="m-apellido" placeholder="Apellido"></div></div>';
     body += '<div style="font-size:12px;color:#8893a5;margin:-4px 0 12px">Todo huésped queda registrado al ingresar. Si es su primera vez, se guarda automáticamente con su cédula.</div>';
     body += '<div class="field"><label>Edad</label><input id="m-edad" type="number" min="0" max="120" placeholder="ej: 35"></div>';
     body += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:120px"><label>Estado civil</label><select id="m-estadocivil">'+estadoCivilOptions('')+'</select></div>';
@@ -2345,7 +2346,7 @@ function seleccionarCliente(){
   const sel=document.getElementById('m-cliente'); if(!sel) return;
   const id=sel.value;
   const box=document.getElementById('m-guardar-box');
-  const inp=document.getElementById('m-huesped');
+  const inpN=document.getElementById('m-nombre'); const inpA=document.getElementById('m-apellido');
   if(!id){ if(box) box.style.display='flex'; try{cxcCheckinAlert();}catch(e){} return; }
   const cedEl=document.getElementById('m-cedula');
   const cedTxt=cedEl?(cedEl.value||'').trim():'';
@@ -2357,7 +2358,7 @@ function seleccionarCliente(){
     return;
   }
   const c=clientes().find(x=>x.id===id);
-  if(c && inp){ inp.value = c.tipo==='empresa'?c.nombre:((c.nombre||'')+' '+(c.apellido||'')).trim(); }
+  if(c){ const dt=document.getElementById('m-doctipo'); if(dt){ dt.value=(c.docTipo||(c.tipo==='empresa'?'J':'V')); } toggleDocTipoCheckin(); if(inpN) inpN.value=(c.nombre||''); if(inpA) inpA.value=(c.tipo==='empresa'?'':(c.apellido||'')); }
   const er=document.getElementById('m-empresaref'); if(er && c && c.tipo!=='empresa' && (c.empresaRef||'').trim()){ er.value=c.empresaRef; autoLlenarEmpresaCheckin(); }
   const chk=document.getElementById('m-guardar'); if(chk) chk.checked=false;
   if(box) box.style.display='none';
@@ -2389,8 +2390,8 @@ function buscarCedula(){
   if(list.length===0){
     if(sel){ sel.value=''; }
     const box=document.getElementById('m-guardar-box'); if(box) box.style.display='flex';
-    const inp=document.getElementById('m-huesped');
-    if(inp && list.length===0 && q.length>=5 && sel && sel.dataset && sel.dataset.auto==='1'){ inp.value=''; sel.dataset.auto='0'; }
+    const inpN=document.getElementById('m-nombre'); const inpA=document.getElementById('m-apellido');
+    if(list.length===0 && q.length>=5 && sel && sel.dataset && sel.dataset.auto==='1'){ if(inpN) inpN.value=''; if(inpA) inpA.value=''; sel.dataset.auto='0'; }
     if(res) res.innerHTML='<span style="color:#b5651d">No hay ningún cliente con esa cédula. Puedes registrarlo marcando “Guardar este huésped”.</span>';
     try{cxcCheckinAlert();}catch(e){}
     return;
@@ -2504,10 +2505,21 @@ function menoresDe(o){
 }
 function renderMenoresCheckin(){ pintarMenores('m','m-menores-box','m-ninos'); }
 function toggleMultiHab(){ const chk=document.getElementById('m-multi'); const box=document.getElementById('m-multi-box'); if(chk&&box) box.style.display=chk.checked?'block':'none'; if(chk&&!chk.checked){ document.querySelectorAll('.m-extra:checked').forEach(e=>e.checked=false); const t=document.getElementById('m-multi-total'); if(t) t.innerHTML=''; } }
+function toggleDocTipoCheckin(){
+  const dt=document.getElementById('m-doctipo'); if(!dt) return;
+  const esEmp = dt.value==='J';
+  const wrap=document.getElementById('m-apellido-wrap'); if(wrap) wrap.style.display=esEmp?'none':'';
+  const lbl=document.getElementById('m-nombre-lbl'); if(lbl) lbl.textContent=esEmp?'Nombre de la empresa (Razón social)':'Nombre del huésped';
+  const nom=document.getElementById('m-nombre'); if(nom) nom.placeholder=esEmp?'Razón social':'Nombre';
+  if(esEmp){ const ap=document.getElementById('m-apellido'); if(ap) ap.value=''; }
+}
 function checkin(num){
   if(guardTurno()) return;
-  const h = document.getElementById('m-huesped').value.trim();
-  if(!h){ alert('Escribe el nombre del huésped'); return; }
+  const _nomEl=document.getElementById('m-nombre'); const _apeEl=document.getElementById('m-apellido');
+  const _dtEl0=document.getElementById('m-doctipo'); const _esEmp0 = !!(_dtEl0 && _dtEl0.value==='J');
+  const _nomV=_nomEl?_nomEl.value.trim():''; const _apeV=(!_esEmp0 && _apeEl)?_apeEl.value.trim():'';
+  const h = (_nomV+' '+_apeV).trim();
+  if(!_nomV){ alert('Escribe el nombre del huésped'); return; }
   const sel=document.getElementById('m-cliente');
   let clienteId = sel?sel.value:'';
   if(!clienteId){
@@ -2531,9 +2543,7 @@ function checkin(num){
       if(dtSel==='J'){
         nuevo = {id:'c'+Date.now(), tipo:'empresa', nombre:h, apellido:'', docTipo:'J', docNum:ced, correo:'', ocupacion:(_pr?_pr.value.trim():''), ciudad:(_pd?_pd.value.trim():''), telefono:'', direccion:'', notas:'', historial:[], creado:new Date().toISOString(), codigo:nuevoCodigoEmpresa()};
       } else {
-        const partes = h.split(/\s+/);
-        const nombre = partes.shift()||h; const apellido = partes.join(' ');
-        nuevo = {id:'c'+Date.now(), tipo:'persona', nombre:nombre, apellido:apellido, docTipo:dtSel, docNum:ced, correo:'', ocupacion:(_pr?_pr.value.trim():''), ciudad:(_pd?_pd.value.trim():''), estadoCivil:(_ec?_ec.value:''), destino:(_de?_de.value.trim():''), edad:(_ed?_ed.value.trim():''), notas:'', historial:[], creado:new Date().toISOString()};
+        nuevo = {id:'c'+Date.now(), tipo:'persona', nombre:_nomV, apellido:_apeV, docTipo:dtSel, docNum:ced, correo:'', ocupacion:(_pr?_pr.value.trim():''), ciudad:(_pd?_pd.value.trim():''), estadoCivil:(_ec?_ec.value:''), destino:(_de?_de.value.trim():''), edad:(_ed?_ed.value.trim():''), notas:'', historial:[], creado:new Date().toISOString()};
       }
       const list=clientes(); list.push(nuevo); saveClientes(list); clienteId=nuevo.id;
     }
