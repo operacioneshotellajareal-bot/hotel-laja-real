@@ -3392,14 +3392,26 @@ async function borrarTodoDesdeCero(){
   if(String(ingresada) !== String(esperada)){ alert('Contraseña incorrecta. No se borró nada.'); return; }
   if(!confirm('ÚLTIMA ADVERTENCIA\n\nSe borrarán TODOS los datos (habitaciones, clientes, empresas, pagos, caja, reportes, turnos, kardex, usuarios y configuración), en este equipo y en la nube.\n\n¿Seguro que quieres empezar de cero?')) return;
   if(!confirm('Esto NO se puede deshacer.\n\n¿Confirmas borrar todo definitivamente?')) return;
+  /* Evitar que el sondeo vuelva a bajar datos viejos mientras borramos */
+  try{ CLOUD.ready=false; }catch(e){}
+  /* 1) Vaciar la nube por completo */
   try{ if(typeof CLOUD!=='undefined' && CLOUD.enabled){ await CLOUD.clearAll(); } }catch(e){}
+  /* 2) Vaciar este equipo por completo */
   try{ SYNC_KEYS.forEach(k=> localStorage.removeItem('hotel_'+k)); }catch(e){}
-  /* Dejar TODO en blanco, tambien el logo/nombre/eslogan, en este equipo */
   try{ ['hotel','impresion','promos','restaurantes'].forEach(k=> localStorage.removeItem('hotel_'+k)); }catch(e){}
-  /* y tambien en la nube, para que al recargar NO se vuelva a bajar el logo viejo */
-  try{ if(typeof CLOUD!=='undefined' && CLOUD.enabled){ CLOUD.ready=true; await CLOUD.push('hotel', {}); } }catch(e){}
   try{ localStorage.removeItem('hotel_session'); localStorage.removeItem('hotel_ultimoRespaldo'); }catch(e){}
   try{ sessionStorage.removeItem('hotel_avisoRespaldo'); }catch(e){}
+  /* 3) Reconstruir un estado NUEVO y limpio en este equipo */
+  seed(); /* habitaciones, usuario admin y cajas basicas */
+  const _vacios = { clientes:[], turnos:[], kardex:[], reservas:[], promos:[], enviosAdmin:[], chat:[], chatLeidos:{}, presencia:{}, cxc:[], restaurantes:[], hotel:{}, impresion:{}, forzarCierre:{} };
+  try{ Object.keys(_vacios).forEach(k=> localStorage.setItem('hotel_'+k, JSON.stringify(_vacios[k]))); }catch(e){}
+  /* 4) Subir TODAS las cajas (ya vacias) a la nube, para que NINGUN otro equipo reviva datos viejos */
+  try{
+    if(typeof CLOUD!=='undefined' && CLOUD.enabled){
+      CLOUD.ready=true; CLOUD._cloudKeys = SYNC_KEYS.slice();
+      for(const k of SYNC_KEYS){ const v=DB.get(k); await CLOUD.push(k, (v===undefined?null:v)); }
+    }
+  }catch(e){}
   alert('Listo. Se borró todo.\n\nLa app se reiniciará limpia para que la vuelvas a configurar. Entra con el usuario admin y la contraseña admin.');
   location.reload();
 }
