@@ -6100,7 +6100,7 @@ function clienteRows(){
   let t='<table class="users-table"><tr><th>Nombre / Empresa</th><th>Documento</th><th>Correo</th><th>Ocupación</th><th>Ciudad</th><th style="text-align:right">Acciones</th></tr>';
   list.forEach(c=>{
     const nom = c.tipo==='empresa' ? esc(c.nombre) : esc(((c.nombre||'')+' '+(c.apellido||'')).trim());
-    const doc = c.docNum ? esc(docLabel(c.docTipo)+' '+c.docNum) : '—';
+    const doc = c.docNum ? esc((c.docTipo||'')+'-'+c.docNum) : '—';
     t += '<tr><td><b>'+nom+'</b>'+(c.tipo==='empresa'?' <span style="font-size:11px;color:#8893a5">(Empresa)</span>':'')+(c.tipo==='empresa'&&c.codigo?' <span style="font-size:11px;color:#1b6ca8;font-weight:700">['+esc(c.codigo)+']</span>':'')+cxcBadgeCliente(c)+'</td>'+
       '<td>'+doc+'</td><td>'+esc(c.correo||'—')+'</td><td>'+esc(c.ocupacion||'—')+'</td><td>'+esc(c.ciudad||'—')+'</td>'+
       '<td style="text-align:right;white-space:nowrap"><button class="btn-ghost" style="padding:6px 12px;margin-right:6px" onclick="verClienteModal(\''+c.id+'\')">Ver</button>'+
