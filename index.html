@@ -5957,6 +5957,7 @@ function toggleClienteTipo(){
   document.getElementById('cl-lbl-nombre').textContent = esEmp?'Razón social / Nombre de la empresa':'Nombre';
   document.getElementById('cl-lbl-ocup').textContent = esEmp?'Actividad / Rubro':'Ocupación';
   const be=document.getElementById('cl-box-edad'); if(be) be.style.display=esEmp?'none':'';
+  const bec=document.getElementById('cl-box-estadocivil'); if(bec) bec.style.display=esEmp?'none':'';
   const br=document.getElementById('cl-box-empresaref'); if(br) br.style.display=esEmp?'none':'';
   const bc=document.getElementById('cl-box-empresa'); if(bc) bc.style.display=esEmp?'':'none';
   const dt=document.getElementById('cl-doctipo'); if(esEmp) dt.value='J';
