@@ -2543,7 +2543,7 @@ function quitarCoronaHab(num){
 function limpiarAutorizacionHab(num){ updateRoom(num,{autorizada:false, autorizadaModo:'', autorizadaInvitado:'', autorizadaMotivo:'', autorizadaPor:'', autorizadaTarifaNormal:0}); }
 function confirmCheckout(num){
   limpiarAutorizacionHab(num);
-  updateRoom(num,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, creditoCxc:false, creditoCxcId:'', creditoCxcControl:0});
+  updateRoom(num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, creditoCxc:false, creditoCxcId:'', creditoCxcControl:0});
   cerrarModal(); render();
 }
 function checkoutSinCobro(num){
@@ -2734,7 +2734,7 @@ function confirmarCambioHab(origen){
   if(!d || d.estado!=='libre'){ alert('Esa habitación ya no está libre. Elige otra.'); return; }
   updateRoom(destinoNum,{estado:'ocupada', huesped:o.huesped, clienteId:o.clienteId||'', personas:o.personas||1, noches:o.noches||1, tarifa:o.tarifa||0, checkin:o.checkin||'', salida:o.salida||'', cargos:cargosDe(o).slice(), abonos:(Array.isArray(o.abonos)?o.abonos.slice():[]), nota:'', limpiezaPendiente:false, promoId:o.promoId||'', promoTitulo:o.promoTitulo||'', promoDesc:o.promoDesc||0});
   limpiarAutorizacionHab(origen);
-  updateRoom(origen,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, nota:'Habitación desocupada por cambio'+(motivo?' · '+motivo:'')});
+  updateRoom(origen,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción (cambio de hab.)', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, nota:'Habitación desocupada por cambio'+(motivo?' · '+motivo:'')});
   moverEstadiaHab(o.clienteId||'', origen, destinoNum);
   logKardex('cambio',{hab:origen, huesped:o.huesped||'', clienteId:o.clienteId||'', detalle:'Cambio de Hab. '+origen+' → '+destinoNum+(motivo?' · '+motivo:''), montoUsd:0, montoBs:0, metodo:''});
   if(mant){
@@ -2833,42 +2833,142 @@ function guardarReporte(num){
 }
 
 /* ====== AMA DE LLAVES ====== */
+var _hkFiltro='';
+function hkFiltrar(f){ _hkFiltro = (_hkFiltro===f?'':f); render(); }
+function hkBuscar(){
+  const inp=document.getElementById('hk-buscar'); if(!inp) return;
+  const q=(inp.value||'').trim();
+  const items=document.querySelectorAll('#hk-lista .task');
+  let vis=0;
+  items.forEach(el=>{
+    const n=el.getAttribute('data-hknum')||'';
+    const ok = !q || n.indexOf(q)>-1;
+    el.style.display = ok?'':'none';
+    if(ok) vis++;
+  });
+  const vacio=document.getElementById('hk-sinresultado');
+  if(vacio) vacio.style.display = (q && vis===0)?'':'none';
+}
+function hkChip(f,label,count,color){
+  const act=_hkFiltro===f;
+  return '<button onclick="hkFiltrar(\''+f+'\')" style="border:1.5px solid '+color+';background:'+(act?color:'#fff')+';color:'+(act?'#fff':color)+';font-weight:700;font-size:12px;padding:4px 10px;border-radius:16px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;line-height:1.4">'+label+'<span style="background:'+(act?'rgba(255,255,255,.3)':color)+';color:#fff;border-radius:10px;padding:0 6px;font-size:11px;font-weight:800">'+count+'</span></button>';
+}
 function renderHousekeeping(){
   const c = document.getElementById('content');
-  let html = '<div class="section-title">Ama de Llaves · Habitaciones por atender</div>';
+  let html = '<div class="section-title">Ama de Llaves · Habitaciones</div>';
   const perm = permisosDe('housekeeping');
   if(!perm.verPendientes){ html += '<div class="empty-guia"><span class="ico">🔒</span><div class="t">Sin acceso a la lista de limpieza</div><div class="s">El Master desactivó esta opción para tu rol. Pídele que la active para poder ver las habitaciones por atender.</div></div>'; c.innerHTML=html; return; }
   const puedeMarcar = !!perm.puedeMarcarLista;
   const puedeDanio = !!perm.puedeReportarDano;
   const porLimpiar = rooms().filter(r=>r.estado==='sucia');
   const enLimpieza = rooms().filter(r=>r.estado==='limpieza');
-  html += '<div class="stats"><div class="stat" style="border-left-color:var(--naranja)"><div class="n">'+porLimpiar.length+'</div><div class="l">Por limpiar</div></div>';
-  html += '<div class="stat" style="border-left-color:var(--azul2)"><div class="n">'+enLimpieza.length+'</div><div class="l">En limpieza</div></div>';
-  html += '<div class="stat" style="border-left-color:var(--verde)"><div class="n">'+countBy('libre')+'</div><div class="l">Listas</div></div></div>';
-  const ocupLimp = rooms().filter(r=>r.estado==='ocupada' && r.limpiezaPendiente);
-  if(ocupLimp.length){
-    html += '<div class="section-title" style="font-size:15px;margin-top:8px">🧹 Limpieza solicitada (habitación ocupada)</div><div class="task-list">';
-    ocupLimp.forEach(r=>{
-      html += '<div class="task"><div class="info"><b>Habitación '+r.num+'</b> <span style="color:#b5651d;font-weight:700;font-size:13px">Huésped dentro</span><div class="meta">Piso '+r.piso+' · '+esc(r.huesped||'')+'</div></div><div class="acts">'+(puedeMarcar?'<button class="btn-green" onclick="limpiezaOcupadaLista('+r.num+')">Limpieza hecha</button>':'')+'</div></div>';
-    });
-    html += '</div>';
+  const ocupadas = rooms().filter(r=>r.estado==='ocupada');
+  const nuevas = porLimpiar.filter(r=>r.hkNueva);
+  if(porLimpiar.length>0){
+    html += '<div style="font-size:13.5px;color:#b5651d;font-weight:700;margin-bottom:8px">🧹 '+porLimpiar.length+' por limpiar'+(nuevas.length?' · 🆕 '+nuevas.length+' nueva(s)':'')+'</div>';
+  } else {
+    html += '<div style="font-size:13.5px;color:#2e7d4f;font-weight:700;margin-bottom:8px">✅ Nada por limpiar. ¡Todo al día!</div>';
   }
-  const todas = enLimpieza.concat(porLimpiar);
-  if(todas.length===0){ if(ocupLimp.length===0){ html += '<div class="empty">✅ No hay habitaciones pendientes. ¡Todo al día!</div>'; } c.innerHTML=html; return; }
-  html += '<div class="task-list">';
-  todas.forEach(r=>{
-    const enProg = r.estado==='limpieza';
-    html += '<div class="task"><div class="info"><b>Habitación '+r.num+'</b> <span style="color:'+(enProg?'var(--azul2)':'var(--naranja)')+';font-weight:700;font-size:13px">'+(enProg?'En limpieza':'Por limpiar')+'</span><div class="meta">Piso '+r.piso+'</div></div><div class="acts">';
-    if(puedeMarcar && !enProg) html += '<button class="btn-primary" onclick="iniciarLimpieza('+r.num+')">Iniciar</button>';
-    if(puedeMarcar) html += '<button class="btn-green" onclick="terminarLimpieza('+r.num+')">Marcar lista</button>';
-    if(puedeDanio) html += '<button class="btn-gray" onclick="aMantenimiento('+r.num+')">Reportar daño</button>';
+  // 3 botones de filtro
+  html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">';
+  html += hkChip('','Todas',rooms().length,'#555');
+  html += hkChip('sucia','Limpieza',porLimpiar.length,stateColor('sucia'));
+  html += hkChip('ocupada','Ocupadas',ocupadas.length,stateColor('ocupada'));
+  html += hkChip('limpieza','En limpieza',enLimpieza.length,stateColor('limpieza'));
+  html += '</div>';
+  html += '<input id="hk-buscar" type="number" inputmode="numeric" placeholder="🔍 Buscar por número de habitación..." oninput="hkBuscar()" style="width:100%;box-sizing:border-box;padding:9px 12px;border:1.5px solid #d7d7e2;border-radius:10px;font-size:14px;margin-bottom:12px">';
+  const orden = {sucia:1,limpieza:2,ocupada:3,libre:4,mantenimiento:5};
+  let all = rooms().slice().sort((a,b)=>{
+    const oa=orden[a.estado]||9, ob=orden[b.estado]||9;
+    if(oa!==ob) return oa-ob;
+    if(a.estado==='sucia'){ const na=a.hkNueva?0:1, nb=b.hkNueva?0:1; if(na!==nb) return na-nb; }
+    return (a.num||0)-(b.num||0);
+  });
+  if(_hkFiltro) all = all.filter(r=>r.estado===_hkFiltro);
+  if(all.length===0){ html += '<div class="empty">'+(porLimpiar.length===0&&!_hkFiltro?'✅ No hay habitaciones pendientes. ¡Todo al día!':'No hay habitaciones en esta categoría.')+'</div>'; c.innerHTML=html; return; }
+  html += '<div id="hk-lista" class="task-list">';
+  all.forEach(r=>{
+    const est = r.estado;
+    const esNueva = est==='sucia' && r.hkNueva;
+    const e = ESTADOS[est] || {t:est};
+    const col = stateColor(est);
+    const ocupLimp = est==='ocupada' && r.limpiezaPendiente;
+    html += '<div class="task" data-hknum="'+r.num+'"'+(esNueva?' style="background:#fff8ec;border-left:4px solid var(--naranja)"':'')+'>'
+      +'<div class="info"><b>Habitación '+r.num+'</b> '
+      +(esNueva?'<span style="background:var(--naranja);color:#fff;font-weight:800;font-size:11px;padding:2px 8px;border-radius:20px;margin-right:4px">🆕 NUEVA</span>':'')
+      +'<span style="display:inline-flex;align-items:center;gap:5px;color:#555;font-weight:700;font-size:13px"><i style="width:10px;height:10px;border-radius:3px;background:'+col+';display:inline-block"></i>'+e.t+'</span>'
+      +(ocupLimp?' <span style="color:#b5651d;font-weight:700;font-size:12px">· 🧹 limpieza solicitada</span>':'')
+      +'<div class="meta">Piso '+r.piso
+        +(est==='ocupada'&&r.huesped?' · '+esc(r.huesped):'')
+        +(r.hkOrigen&&est==='sucia'?' · reportó: '+esc(r.hkOrigen):'')
+        +((est==='sucia'||est==='mantenimiento')&&r.nota?' · '+esc(r.nota):'')
+      +'</div></div><div class="acts">';
+    if(est==='sucia'){
+      if(puedeMarcar) html += '<button class="btn-primary" onclick="iniciarLimpieza('+r.num+')">Iniciar</button>';
+      if(puedeMarcar) html += '<button class="btn-green" onclick="terminarLimpieza('+r.num+')">Marcar lista</button>';
+      if(puedeDanio) html += '<button class="btn-gray" onclick="aMantenimiento('+r.num+')">Daño</button>';
+    } else if(est==='limpieza'){
+      if(puedeMarcar) html += '<button class="btn-green" onclick="terminarLimpieza('+r.num+')">Marcar lista</button>';
+      if(puedeDanio) html += '<button class="btn-gray" onclick="aMantenimiento('+r.num+')">Daño</button>';
+    } else if(ocupLimp){
+      if(puedeMarcar) html += '<button class="btn-green" onclick="limpiezaOcupadaLista('+r.num+')">Limpieza hecha</button>';
+    } else if(est==='libre'){
+      if(puedeMarcar) html += '<button class="btn-gray" onclick="reportarUsadaHK('+r.num+')">Marcar usada</button>';
+    }
     html += '</div></div>';
   });
   html += '</div>';
+  html += '<div id="hk-sinresultado" class="empty" style="display:none">No se encontró ninguna habitación con ese número.</div>';
   c.innerHTML = html;
 }
-function iniciarLimpieza(num){ updateRoom(num,{estado:'limpieza'}); render(); }
-function terminarLimpieza(num){ updateRoom(num,{estado:'libre',nota:''}); render(); }
+function iniciarLimpieza(num){ updateRoom(num,{estado:'limpieza', hkNueva:false}); render(); }
+function terminarLimpieza(num){ updateRoom(num,{estado:'libre',nota:'',hkNueva:false}); render(); }
+
+/* ====== MAPA DE COLORES PARA AMA DE LLAVES ======
+   Muestra TODAS las habitaciones. Las que estan Libres se pueden tocar para
+   reportarlas como usadas (pasan a 'Por limpiar') agregando una nota. */
+function mapaHousekeeping(puedeReportar){
+  let h = '<div class="section-title" style="font-size:15px;margin-top:14px">🗺️ Todas las habitaciones</div>';
+  h += '<div style="background:#eef6ff;border:1px solid #cfe0f5;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#2a4a73;margin-bottom:10px">Revisa el estado de todas. Si una está <b>Libre</b> pero la encuentras <b>usada</b> y nadie la reportó, tócala para pasarla a <b>Por limpiar</b> (te pedirá una nota).</div>';
+  h += '<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:#556;margin-bottom:8px">';
+  [['libre','Libre'],['ocupada','Ocupada'],['sucia','Por limpiar'],['limpieza','En limpieza'],['mantenimiento','Mantenimiento']].forEach(x=>{
+    h += '<span style="display:inline-flex;align-items:center;gap:5px"><i style="width:11px;height:11px;border-radius:3px;display:inline-block;background:'+stateColor(x[0])+'"></i>'+x[1]+'</span>';
+  });
+  h += '</div>';
+  pisos().forEach(p=>{
+    const list = rooms().filter(r=>r.piso===p);
+    if(!list.length) return;
+    h += '<div class="floor"><h3>Piso '+p+'</h3><div class="rooms">';
+    list.forEach(r=>{ h += roomCardHK(r, puedeReportar); });
+    h += '</div></div>';
+  });
+  return h;
+}
+function roomCardHK(r, puedeReportar){
+  const e = ESTADOS[r.estado];
+  const libre = r.estado==='libre';
+  const accionable = libre && puedeReportar;
+  const esNueva = r.estado==='sucia' && r.hkNueva;
+  const click = accionable ? (' onclick="reportarUsadaHK('+r.num+')"') : ' style="cursor:default"';
+  return '<div class="room '+e.c+'"'+click+'><div class="dot"></div>'+
+    '<div class="num">'+r.num+'</div><div class="st">'+e.t+'</div>'+
+    (esNueva?'<div class="st" style="color:#b5651d;font-weight:800;font-size:9px">🆕 NUEVA</div>':'')+
+    (accionable?'<div class="st" style="opacity:.85;font-size:9px">Tocar si está usada</div>':'')+'</div>';
+}
+function reportarUsadaHK(num){
+  const r = rooms().find(x=>x.num===num);
+  if(!r || r.estado!=='libre'){ alert('Esta habitación ya no está libre.'); render(); return; }
+  if(!confirm('¿Reportar la habitación '+num+' como USADA / por limpiar?\n\nEntrará a tu lista de limpieza.')) return;
+  const resp = prompt('Escribe una nota de lo que encontraste en la habitación '+num+':\n\n(Ejemplo: cama usada, toallas sucias, basura; nadie la había reportado)','');
+  if(resp===null) return;
+  const nota = String(resp).trim();
+  if(!nota){ alert('Debes escribir una nota para reportar la habitación.'); return; }
+  const s = session()||{};
+  updateRoom(num,{estado:'sucia', nota:nota, hkNueva:false, hkOrigen:'Ama de Llaves'});
+  logKardex('limpieza',{hab:num, nota:nota, detalle:'Ama de Llaves reportó la habitación '+num+' como usada (nadie la había reportado) · '+nota, montoUsd:0, montoBs:0, metodo:''});
+  alert('Listo. La habitación '+num+' quedó en "Por limpiar".');
+  render();
+}
 
 /* ====== MANTENIMIENTO ====== */
 function mantenimientoBody(puedeResolver){
@@ -4427,7 +4527,7 @@ function checkoutCuenta(numsStr){
     limpiarAutorizacionHab(r.num);
     logKardex('checkout', {hab:r.num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Check-out'+(sinCobro?' SIN cobro (quedó saldo)':' (cuenta pagada)')+(multi?(' · cuenta '+g.nums.join(', ')):''), montoUsd:0, montoBs:0, metodo:sinCobro?'Sin cobro':'Pagado'});
     cerrarEstadia(r.clienteId||'', r.num, {noches:r.noches||1, montoUsd:abR, metodo:sinCobro?'Sin cobro':'Pagado'});
-    updateRoom(r.num,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0});
+    updateRoom(r.num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0});
   });
   cerrarModal(); render();
   alert('Check-out hecho de '+(multi?(g.list.length+' habitaciones'):('la habitación '+g.nums[0]))+'.'+(sinCobro?' Quedó registrado como salida sin cobro.':''));
@@ -4498,7 +4598,7 @@ function enviarACxCConfirm(numsStr){
   g.list.forEach(r=>{
     cerrarEstadia(r.clienteId||'', r.num, {noches:r.noches||1, montoUsd:0, metodo:'A crédito'});
     limpiarAutorizacionHab(r.num);
-    updateRoom(r.num,{estado:'sucia', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0});
+    updateRoom(r.num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0});
   });
   cerrarModal(); render();
   alert((_consolidado?'Se agregó a la cuenta CXC de '+nombre+' (una sola cuenta).':'Cuenta enviada a CXC.')+'\nN° de control: '+fmtControl(ctrl)+'\nDeuda: '+fmtUSD(g.saldo)+'\n\nQuedó en la pestaña "CXC" y aparece en el corte del turno.');
