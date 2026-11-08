@@ -254,19 +254,36 @@ const SB_APP_PASS  = 'LajaReal2026-Caja';
 const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos','forzarCierre','enviosAdmin','chat','chatLeidos','cxc','restaurantes'];
 
 /* ====== ALMACENAMIENTO (local + nube) ====== */
+/* ====== COLA DE SINCRONIZACION OFFLINE ======
+   Lista de cajas con cambios locales que aun NO se han confirmado en la nube.
+   Se guarda solo en este equipo y NUNCA se sube (no esta en SYNC_KEYS). Si se
+   cae el internet, lo que guardes queda aqui en espera y se sube solo al
+   reconectar, sin que la nube lo pise. */
+function _pendGet(){ try{ return JSON.parse(localStorage.getItem('hotel__colaSync')||'[]'); }catch(e){ return []; } }
+function _pendSet(a){ try{ localStorage.setItem('hotel__colaSync', JSON.stringify(a)); }catch(e){} }
+function _pendAdd(k){ const a=_pendGet(); if(a.indexOf(k)<0){ a.push(k); _pendSet(a); } }
+function _pendDel(k){ _pendSet(_pendGet().filter(x=>x!==k)); }
+function _pendHas(k){ return _pendGet().indexOf(k)>=0; }
+function colaPendientes(){ return _pendGet().length; }
+
 const DB = {
   get(k, def){ try{ const v = localStorage.getItem('hotel_'+k); return v?JSON.parse(v):def; }catch(e){ return def; } },
   set(k, val){
     localStorage.setItem('hotel_'+k, JSON.stringify(val));
     try{ if(typeof CLOUD!=='undefined' && CLOUD.enabled && CLOUD.ready && SYNC_KEYS.includes(k)) mostrarGuardando(); }catch(e){}
-    try{ if(typeof CLOUD!=='undefined') CLOUD.push(k, val); }catch(e){}
+    try{
+      if(typeof CLOUD!=='undefined' && CLOUD.enabled && CLOUD.ready && SYNC_KEYS.includes(k)){
+        _pendAdd(k);            /* anota el pendiente ANTES de intentar subir */
+        CLOUD.flushQueue();     /* intenta subir la cola; quita lo que logre */
+      }
+    }catch(e){}
   }
 };
 
 const CLOUD = {
   ready:false,
   enabled: !!(SB_URL && SB_KEY),
-  _cloudKeys:[],
+  _cloudKeys:[], _lastSync:'', _flushing:false,
   _token:null, _refresh:null, _exp:0,
   _authEnabled: !!(SB_APP_EMAIL && SB_APP_PASS),
   _h(extra){ const auth = this._token ? ('Bearer '+this._token) : ('Bearer '+SB_KEY); return Object.assign({'apikey':SB_KEY,'Authorization':auth,'Content-Type':'application/json'}, extra||{}); },
@@ -296,23 +313,54 @@ const CLOUD = {
   async pullAll(){
     if(!this.enabled) return;
     await this.ensureAuth();
-    let r = await fetch(SB_URL+'/rest/v1/estado_app?select=clave,valor', {headers:this._h()});
-    if(r.status===401 && this._authEnabled){ await this.signIn(); r = await fetch(SB_URL+'/rest/v1/estado_app?select=clave,valor', {headers:this._h()}); }
+    /* Descarga incremental: la primera vez baja todo; luego solo lo que cambio
+       desde la ultima vez (con una ventana de 60s de solape por si los relojes
+       de los equipos no coinciden). Asi el 'egress' baja muchisimo pero la
+       comunicacion entre equipos sigue siendo al instante. */
+    let url = SB_URL+'/rest/v1/estado_app?select=clave,valor,actualizado';
+    if(this._lastSync){
+      let desde = this._lastSync;
+      try{ desde = new Date(new Date(this._lastSync).getTime() - 60000).toISOString(); }catch(e){}
+      url += '&actualizado=gt.'+encodeURIComponent(desde);
+    }
+    let r = await fetch(url, {headers:this._h()});
+    if(r.status===401 && this._authEnabled){ await this.signIn(); r = await fetch(url, {headers:this._h()}); }
     if(!r.ok) throw new Error('pull '+r.status);
     const rows = await r.json();
-    this._cloudKeys = rows.map(x=>x.clave);
-    rows.forEach(row=>{ if(SYNC_KEYS.includes(row.clave)){ localStorage.setItem('hotel_'+row.clave, JSON.stringify(row.valor)); } });
+    rows.forEach(x=>{ if(this._cloudKeys.indexOf(x.clave)<0) this._cloudKeys.push(x.clave); });
+    /* NO pisar las cajas que estan en la cola (cambios locales sin subir):
+       asi lo que hiciste sin internet manda hasta que se confirme en la nube. */
+    rows.forEach(row=>{ if(SYNC_KEYS.includes(row.clave) && !_pendHas(row.clave)){ localStorage.setItem('hotel_'+row.clave, JSON.stringify(row.valor)); } });
+    rows.forEach(row=>{ if(row.actualizado && (!this._lastSync || row.actualizado > this._lastSync)) this._lastSync = row.actualizado; });
   },
   async push(k, val){
-    if(!this.enabled || !this.ready) return;
-    if(!SYNC_KEYS.includes(k)) return;
+    if(!this.enabled || !this.ready) return false;
+    if(!SYNC_KEYS.includes(k)) return false;
     try{
       await this.ensureAuth();
       const body = JSON.stringify({clave:k, valor:val, actualizado:new Date().toISOString()});
       let r = await fetch(SB_URL+'/rest/v1/estado_app?on_conflict=clave', {method:'POST', headers:this._h({'Prefer':'resolution=merge-duplicates'}), body});
-      if(r.status===401 && this._authEnabled){ await this.signIn(); await fetch(SB_URL+'/rest/v1/estado_app?on_conflict=clave', {method:'POST', headers:this._h({'Prefer':'resolution=merge-duplicates'}), body}); }
+      if(r.status===401 && this._authEnabled){ await this.signIn(); r = await fetch(SB_URL+'/rest/v1/estado_app?on_conflict=clave', {method:'POST', headers:this._h({'Prefer':'resolution=merge-duplicates'}), body}); }
+      if(!r.ok) throw new Error('push '+r.status);
       try{ mostrarGuardado(); }catch(e){}
-    }catch(e){ /* sin conexión: queda guardado en el equipo y se subirá luego */ }
+      return true;
+    }catch(e){ /* sin conexion: queda en la cola y se subira al reconectar */ return false; }
+  },
+  async flushQueue(){
+    if(!this.enabled || !this.ready) return;
+    if(this._flushing) return;
+    this._flushing = true;
+    try{
+      const pend = _pendGet();
+      for(const k of pend){
+        if(!SYNC_KEYS.includes(k)){ _pendDel(k); continue; }
+        const v = DB.get(k);
+        const ok = await this.push(k, (v===undefined?null:v));
+        if(ok){ _pendDel(k); }
+        else { break; }   /* sigue sin conexion: paramos y reintentamos luego */
+      }
+    }catch(e){}
+    this._flushing = false;
   },
   async pushMissing(){
     if(!this.enabled) return;
@@ -6365,6 +6413,7 @@ function startPolling(){
     try{
       const antes = {};
       SYNC_KEYS.forEach(k=> antes[k]=localStorage.getItem('hotel_'+k));
+      try{ await CLOUD.flushQueue(); }catch(e){}  /* sube lo pendiente ANTES de bajar */
       await CLOUD.pullAll();
       revisarCierreForzado();
       try{ if(session()) revisarMensajesNuevos(); }catch(e){}
@@ -6431,9 +6480,12 @@ async function bootstrap(){
   seed();                 // completa cajas que falten (sin pisar lo que ya hay)
   CLOUD.ready = true;
   try{ await CLOUD.pushMissing(); }catch(e){}  // primer equipo: sube lo que la nube aún no tiene
+  try{ await CLOUD.flushQueue(); }catch(e){}   // sube lo que haya quedado pendiente de una sesion previa
   aplicarTema(); pintarMarca(); openApp();
   startPolling();
 }
+/* Apenas vuelve el internet, intenta subir la cola de una vez */
+window.addEventListener('online', function(){ try{ CLOUD.flushQueue(); }catch(e){} });
 bootstrap();
 </script>
 </body>
