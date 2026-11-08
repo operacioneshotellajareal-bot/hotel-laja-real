@@ -5951,6 +5951,24 @@ function nuevoCodigoEmpresa(){
   const max=nums.length?Math.max.apply(null,nums):0;
   return 'EMP-'+String(max+1).padStart(4,'0');
 }
+function repararCodigosEmpresas(){
+  if(!esMaster(session().rol)){ alert('Solo el Master puede reparar los códigos.'); return; }
+  const list=clientes();
+  const emps=list.filter(c=>c.tipo==='empresa');
+  if(!emps.length){ alert('No hay empresas registradas.'); return; }
+  const cnt={};
+  emps.forEach(e=>{ const k=String(e.codigo||'').trim().toUpperCase(); cnt[k]=(cnt[k]||0)+1; });
+  const esUnicoValido=e=>{ const k=String(e.codigo||'').trim().toUpperCase(); return /^EMP-\d+$/.test(k) && cnt[k]===1; };
+  const usados=new Set();
+  emps.forEach(e=>{ if(esUnicoValido(e)) usados.add(String(e.codigo||'').trim().toUpperCase()); });
+  const nextCod=()=>{ let mx=0; usados.forEach(k=>{ const m=/^EMP-(\d+)$/.exec(k); if(m){ const n=parseInt(m[1],10); if(n>mx) mx=n; } }); const nc='EMP-'+String(mx+1).padStart(4,'0'); usados.add(nc); return nc; };
+  let cambiados=0;
+  emps.forEach(e=>{ if(!esUnicoValido(e)){ e.codigo=nextCod(); cambiados++; } });
+  if(!cambiados){ alert('Todo en orden ✅\n\nCada empresa ya tiene su propio código único. No hubo nada que reparar.'); return; }
+  if(!confirm('Se van a renumerar '+cambiados+' empresa(s) para que cada una tenga su propio código único.\n\n¿Deseas continuar?')) return;
+  saveClientes(list); render();
+  alert('Listo ✅\n\nSe repararon '+cambiados+' empresa(s). Ahora cada una tiene su propio código único.');
+}
 function empresaPorRef(ref){
   ref=(ref||'').trim(); if(!ref) return null;
   const low=ref.toLowerCase();
@@ -6077,6 +6095,7 @@ function renderClientes(){
   h += '<button class="btn-ghost" style="padding:8px 14px" onclick="exportarClientesCSV()">Exportar a Excel</button>';
   h += '<button class="btn-ghost" style="padding:8px 14px" onclick="abrirImportarClientes()">Importar lista</button>';
   h += '<button class="btn-ghost" style="padding:8px 14px" onclick="descargarPlantillaClientes()">Descargar plantilla (Excel)</button>';
+  if(esMaster(session().rol)) h += '<button class="btn-ghost" style="padding:8px 14px" onclick="repararCodigosEmpresas()">Reparar códigos de empresas</button>';
   h += '<input type="file" id="cl-import-file" accept=".csv,.xls,text/csv" style="display:none" onchange="importarClientesCSV(this)">';
   h += '</div>';
   h += '<div id="cl-lista">'+(list.length? clienteRows() : '<div class="empty-guia"><span class="ico">👤</span><div class="t">Aún no hay clientes guardados</div><div class="s">Registra aquí a tus huéspedes y empresas para reconocerlos cuando vuelvan, llevar su historial y agilizar el check-in. Solo llena el formulario de arriba y toca “Guardar cliente”.</div></div>')+'</div>';
@@ -6235,15 +6254,18 @@ function procesarImportClientes(text){
   const existDocs=new Set(list.filter(c=>c.docNum).map(c=>docKey(c.docTipo,c.docNum)));
   const existCod=new Set(list.filter(c=>c.tipo==='empresa'&&c.codigo).map(c=>norm(c.codigo)));
   const existNom=new Set(list.filter(c=>c.tipo==='empresa').map(c=>norm(c.nombre)));
+  let maxEmpNum=0; list.forEach(c=>{ if(c.tipo==='empresa'){ const m=/^EMP-(\d+)$/.exec(String(c.codigo||'')); if(m){ const n=parseInt(m[1],10); if(n>maxEmpNum) maxEmpNum=n; } } });
   let addP=0,addE=0,skip=0; const base=Date.now();
   for(let i=1;i<rows.length;i++){ const r=rows[i];
     const nombre=g(r,col.nombre); if(!nombre) continue;
     const esEmp = norm(g(r,col.tipo)).indexOf('empresa')>=0 || norm(g(r,col.tipo))==='company';
     if(esEmp){
-      let codigo=g(r,col.codigo); const nkey=norm(nombre);
-      if((codigo && existCod.has(norm(codigo))) || existNom.has(nkey)){ skip++; continue; }
-      if(!codigo) codigo=nuevoCodigoEmpresa();
+      const nkey=norm(nombre);
       const d=parseDoc(r);
+      /* Reconocer por RIF (documento) o por nombre: si ya existe, no duplicar y respetar su código */
+      if((d.dn && existDocs.has(docKey(d.dt,d.dn))) || existNom.has(nkey)){ skip++; continue; }
+      /* La app asigna el código ella misma e IGNORA el que venga en el archivo */
+      const codigo='EMP-'+String(++maxEmpNum).padStart(4,'0');
       const nuevo={id:'c'+(base+i), tipo:'empresa', nombre:nombre, apellido:'', docTipo:(d.dn?d.dt:'J'), docNum:d.dn, correo:g(r,col.correo), ocupacion:g(r,col.ocupacion), ciudad:g(r,col.ciudad), telefono:g(r,col.telefono), direccion:g(r,col.direccion), notas:g(r,col.notas), historial:[], creado:new Date().toISOString(), codigo:codigo, tipoComp:g(r,col.tipoComp), diasCredito:g(r,col.diasCredito)};
       list.push(nuevo); existCod.add(norm(codigo)); existNom.add(nkey); if(d.dn) existDocs.add(docKey(d.dt,d.dn)); addE++;
     } else {
