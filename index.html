@@ -2515,6 +2515,7 @@ function buscarCedula(){
   }
   const c = list.find(x=>normDoc(x.docNum)===q) || list[0];
   rellenarClienteCheckin(c); inp.dataset.auto='1';
+  if(list.length===1 && normDoc(c.docNum)!==q && (c.docNum||'')){ try{ inp.value=c.docNum; }catch(e){} }
   const nom = c.tipo==='empresa'?c.nombre:((c.nombre||'')+' '+(c.apellido||'')).trim();
   const etq = esc(nom)+' ('+docLabel(c.docTipo)+' '+esc(c.docNum)+')';
   if(res){ res.innerHTML = (list.length>1)
@@ -4043,6 +4044,11 @@ function polSetDesde(v){ polDesde=v; render(); }
 function polSetHasta(v){ polHasta=v; render(); }
 
 function _polDiaDe(iso){ return String(iso==null?'':iso).slice(0,10); }
+/* Dia CALENDARIO LOCAL del equipo (no UTC). Antes se tomaba la fecha en UTC
+   del registro, y como la hora se guarda en UTC, los check-ins hechos de
+   noche (hora de Venezuela) caian en el dia siguiente y NO aparecian en el
+   reporte del dia. Esto los ubica en el dia correcto segun la hora local. */
+function _polDiaLocal(ts){ try{ const d=new Date(ts); if(isNaN(d.getTime())) return _polDiaDe(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }catch(e){ return _polDiaDe(ts); } }
 function docSigla(t){ return {V:'V',E:'E',P:'P',J:'J',G:'G'}[String(t||'').toUpperCase()]||''; }
 function docCorto(tipo,num){ var s=docSigla(tipo); return (s&&num)?(s+'-'+num):String(num||''); }
 function polRegistros(){
@@ -4053,7 +4059,7 @@ function polRegistros(){
   else { desde=polDesde; hasta=polHasta; }
   const filas=[];
   todos.forEach(k=>{
-    const dia = _polDiaDe(k.ts);
+    const dia = _polDiaLocal(k.ts);
     if(desde && dia<desde) return;
     if(hasta && dia>hasta) return;
     const r = findRoom(k.hab);
@@ -5551,15 +5557,6 @@ function toggleCxcAdmin(){ const h=hotel(); h.cxcAdmin=(h.cxcAdmin===false); sav
 function cxcAbon(e){ return (Array.isArray(e.abonos)?e.abonos:[]).reduce((s,a)=>s+Number(a.montoUsd||0),0); }
 function cxcSaldo(e){ return Math.max(0, Number(e.montoUsd||0)-cxcAbon(e)); }
 function cxcPagada(e){ return cxcSaldo(e)<=0.009; }
-function cxcPendientesDeCliente(clienteId, docNum){
-  const dn=normDoc(docNum);
-  return cxc().filter(function(e){
-    if(cxcPagada(e)) return false;
-    if(clienteId && e.clienteId && e.clienteId===clienteId) return true;
-    if(dn && dn.length>=5){ const ed=normDoc(e.docRef); if(ed && (ed===dn || ed.indexOf(dn)>=0 || dn.indexOf(ed)>=0)) return true; }
-    return false;
-  });
-}
 function cxcCheckinAlert(){
   const box=document.getElementById('m-cxc-box'); if(!box) return;
   const sel=document.getElementById('m-cliente'); const cedEl=document.getElementById('m-cedula');
@@ -5614,7 +5611,8 @@ function cxcCargarHospedajeEmpresa(emp, num, tarifaEf, noches, huesped, clienteI
 }
 function cxcVencida(e){ if(cxcPagada(e)) return false; if(!e.vencimiento) return false; return String(e.vencimiento)<hoyISO(); }
 function cxcNormDoc(s){ return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
-function cxcPendientesDeCliente(cli){
+function cxcPendientesDeCliente(cli, docNum2){
+  if(typeof cli==='string'){ var _id=cli; var _c=_id?(clientes().find(function(x){return x.id===_id;})):null; cli=_c||{id:_id, docNum:docNum2}; }
   if(!cli) return [];
   const docDigits=cxcNormDoc(cli.docNum||'');
   const nom=(clienteNombre(cli)||'').trim().toLowerCase();
