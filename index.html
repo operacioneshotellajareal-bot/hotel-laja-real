@@ -350,17 +350,36 @@ const CLOUD = {
   },
   async flushQueue(){
     if(!this.enabled || !this.ready) return;
-    if(this._flushing) return;
+    /* Si ya hay un envio en curso, no lanzamos otro: dejamos pedido que vuelva
+       a correr al terminar, para no perder cambios hechos mientras subia. */
+    if(this._flushing){ this._flushAgain = true; return; }
     this._flushing = true;
     try{
-      const pend = _pendGet();
-      for(const k of pend){
-        if(!SYNC_KEYS.includes(k)){ _pendDel(k); continue; }
-        const v = DB.get(k);
-        const ok = await this.push(k, (v===undefined?null:v));
-        if(ok){ _pendDel(k); }
-        else { break; }   /* sigue sin conexion: paramos y reintentamos luego */
-      }
+      let seguir = true;
+      do{
+        this._flushAgain = false;
+        const pend = _pendGet();
+        for(const k of pend){
+          if(!SYNC_KEYS.includes(k)){ _pendDel(k); continue; }
+          /* Tomamos una FOTO exacta (texto) de lo que vamos a subir. */
+          const raw = localStorage.getItem('hotel_'+k);
+          let v; try{ v = raw!=null?JSON.parse(raw):null; }catch(e){ v = null; }
+          const ok = await this.push(k, (v===undefined?null:v));
+          if(ok){
+            /* Solo damos por subida la caja si NO cambio mientras subia. Si
+               cambio (p. ej. un check-out de varias habitaciones que guarda
+               cuarto por cuarto), la dejamos pendiente y la volvemos a subir,
+               para que la nube termine con la version final y pullAll no la
+               pise con una version vieja. */
+            if(localStorage.getItem('hotel_'+k) === raw){ _pendDel(k); }
+            else { this._flushAgain = true; }
+          } else {
+            /* Sin conexion: paramos y reintentamos luego (queda en la cola). */
+            this._flushAgain = false; seguir = false; break;
+          }
+        }
+        if(!seguir) break;
+      } while(this._flushAgain);
     }catch(e){}
     this._flushing = false;
   },
