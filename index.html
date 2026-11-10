@@ -1919,9 +1919,12 @@ function reservaRows(q){
   q=(q||'').trim().toLowerCase();
   let list=reservas().slice();
   if(q){
+    const strip=s=>String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    const words=q.split(/\s+/).filter(Boolean);
     list=list.filter(r=>{
-      const hay=[r.loc,r.nombre,r.apellido,r.docNum,r.telefono,r.empresaRef].map(x=>String(x||'').toLowerCase()).join(' ');
-      return hay.indexOf(q)>=0;
+      const campos=strip([r.loc,r.nombre,r.apellido,r.telefono,r.empresaRef].join(' '));
+      const docN=normDoc(r.docNum);
+      return words.every(w=>campos.includes(strip(w)) || (normDoc(w) && docN.includes(normDoc(w))));
     });
   }
   const orden={pendiente:0,ingresada:1,cancelada:2};
@@ -2378,6 +2381,7 @@ function abrirHab(num){
     body += '<div class="field" style="flex:1;min-width:150px"><label>Profesión u oficio</label><input id="m-profesion" placeholder="ej: Comerciante"></div></div>';
     body += '<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:1;min-width:150px"><label>Procedencia</label><input id="m-procedencia" placeholder="¿De dónde viene?"></div>';
     body += '<div class="field" style="flex:1;min-width:150px"><label>Destino</label><input id="m-destino" placeholder="¿Hacia dónde va?"></div></div>';
+    body += '<div class="field"><label>País / Nacionalidad</label><input id="m-pais" value="Venezuela" placeholder="ej: Venezuela"><div style="font-size:12px;color:#8893a5;margin-top:4px">Déjalo en <b>Venezuela</b> si es venezolano. Cámbialo solo cuando el huésped sea de otro país (sirve para el reporte de extranjeros).</div></div>';
     body += '<div style="display:flex;gap:10px"><div class="field" style="flex:1"><label>Personas (adultos)</label><input id="m-personas" type="number" min="1" value="1" oninput="renderAcompCheckin()"></div>';
     body += '<div class="field" style="flex:1"><label>Niños</label><input id="m-ninos" type="number" min="0" value="0" oninput="renderMenoresCheckin()"></div>';
     body += '<div class="field" style="flex:1"><label>Noches</label><input id="m-noches" type="number" min="1" value="1" oninput="recalcCheckin('+num+')"></div></div>';
@@ -2512,6 +2516,7 @@ function rellenarClienteCheckin(c){
   if(c.tipo!=='empresa'){
     _setV('m-edad', c.edad);
     _setV('m-destino', c.destino);
+    _setV('m-pais', c.pais||'Venezuela');
     const _ec=document.getElementById('m-estadocivil'); if(_ec) _ec.value=(c.estadoCivil||'');
   }
   const er=document.getElementById('m-empresaref'); if(er && c.tipo!=='empresa' && (c.empresaRef||'').trim()){ er.value=c.empresaRef; try{autoLlenarEmpresaCheckin();}catch(e){} }
@@ -2727,18 +2732,18 @@ function checkin(num){
       const _l=clientes(); const _c=_l.find(x=>x.id===existe.id);
       if(_c){
         const _v2=function(id){ const e=document.getElementById(id); return e?e.value.trim():''; };
-        const _ecv=_v2('m-estadocivil'), _prv=_v2('m-profesion'), _pdv=_v2('m-procedencia'), _dev=_v2('m-destino'), _edv=_v2('m-edad');
-        if(_ecv) _c.estadoCivil=_ecv; if(_prv) _c.ocupacion=_prv; if(_pdv) _c.ciudad=_pdv; if(_dev) _c.destino=_dev; if(_edv) _c.edad=_edv;
+        const _ecv=_v2('m-estadocivil'), _prv=_v2('m-profesion'), _pdv=_v2('m-procedencia'), _dev=_v2('m-destino'), _edv=_v2('m-edad'), _paisv=_v2('m-pais');
+        if(_ecv) _c.estadoCivil=_ecv; if(_prv) _c.ocupacion=_prv; if(_pdv) _c.ciudad=_pdv; if(_dev) _c.destino=_dev; if(_edv) _c.edad=_edv; if(_paisv) _c.pais=_paisv;
         saveClientes(_l);
       }
     }
     else{
-      const _ec=document.getElementById('m-estadocivil'); const _pr=document.getElementById('m-profesion'); const _pd=document.getElementById('m-procedencia'); const _de=document.getElementById('m-destino'); const _ed=document.getElementById('m-edad');
+      const _ec=document.getElementById('m-estadocivil'); const _pr=document.getElementById('m-profesion'); const _pd=document.getElementById('m-procedencia'); const _de=document.getElementById('m-destino'); const _ed=document.getElementById('m-edad'); const _pais=document.getElementById('m-pais');
       let nuevo;
       if(dtSel==='J'){
         nuevo = {id:'c'+Date.now(), tipo:'empresa', nombre:h, apellido:'', docTipo:'J', docNum:ced, correo:'', ocupacion:(_pr?_pr.value.trim():''), ciudad:(_pd?_pd.value.trim():''), telefono:'', direccion:'', notas:'', historial:[], creado:new Date().toISOString(), codigo:nuevoCodigoEmpresa()};
       } else {
-        nuevo = {id:'c'+Date.now(), tipo:'persona', nombre:_nomV, apellido:_apeV, docTipo:dtSel, docNum:ced, correo:'', ocupacion:(_pr?_pr.value.trim():''), ciudad:(_pd?_pd.value.trim():''), estadoCivil:(_ec?_ec.value:''), destino:(_de?_de.value.trim():''), edad:(_ed?_ed.value.trim():''), notas:'', historial:[], creado:new Date().toISOString()};
+        nuevo = {id:'c'+Date.now(), tipo:'persona', nombre:_nomV, apellido:_apeV, docTipo:dtSel, docNum:ced, correo:'', ocupacion:(_pr?_pr.value.trim():''), ciudad:(_pd?_pd.value.trim():''), estadoCivil:(_ec?_ec.value:''), destino:(_de?_de.value.trim():''), edad:(_ed?_ed.value.trim():''), pais:(_pais?_pais.value.trim():'')||'Venezuela', notas:'', historial:[], creado:new Date().toISOString()};
       }
       const list=clientes(); list.push(nuevo); saveClientes(list); clienteId=nuevo.id;
     }
@@ -4089,6 +4094,15 @@ let polFiltro = 'dia';   // 'dia' | 'rango'
 let polDia = '';
 let polDesde = '';
 let polHasta = '';
+let polSoloExtr = false;
+
+// Un huésped es extranjero si su país NO es Venezuela (sin importar el tipo de documento).
+function esExtranjeroPais(pais){
+  const p=String(pais==null?'':pais).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  if(!p) return false; // sin país = se asume Venezuela = no extranjero
+  return !(p==='venezuela' || p==='venezolano' || p==='venezolana' || p==='vzla' || p==='ve');
+}
+function polSetSoloExtr(v){ polSoloExtr=!!v; render(); }
 
 function polInicializar(){
   if(!polDia){ const d=new Date(); polDia=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -4121,18 +4135,19 @@ function polRegistros(){
     if(hasta && dia>hasta) return;
     const r = findRoom(k.hab);
     const c = (k.clienteId?clientes().find(x=>x.id===k.clienteId):null) || null;
-    let entrada = '', salida = '', nom = k.huesped||'', doc='', edad='', ec='', prof='', proc='', dest='';
+    let entrada = '', salida = '', nom = k.huesped||'', doc='', edad='', ec='', prof='', proc='', dest='', pais='';
     if(c){
       nom = (c.tipo==='empresa'? (c.nombre||'') : ((c.nombre||'')+' '+(c.apellido||'')).trim()) || nom;
       doc = c.docNum?docCorto(c.docTipo,c.docNum):'';
-      edad = c.edad||''; ec = c.estadoCivil||''; prof = c.ocupacion||''; proc = c.ciudad||''; dest = c.destino||'';
+      edad = c.edad||''; ec = c.estadoCivil||''; prof = c.ocupacion||''; proc = c.ciudad||''; dest = c.destino||''; pais = c.pais||'';
     }
     // entrada/salida desde la habitación (histórico del kardex no las guarda, se toman de la room si sigue)
     if(r){ entrada = r.checkin||''; salida = r.salida||''; }
     if(!entrada && c && Array.isArray(c.historial)){ const h=c.historial.find(x=>x.hab===k.hab); if(h){ entrada = h.entrada?fechaDDMMYYYY(_polDiaDe(h.entrada)):''; salida = h.salida?fechaDDMMYYYY(_polDiaDe(h.salida)):''; } }
-    filas.push({ ts:k.ts, dia:String(dia==null?'':dia), hab:String(k.hab==null?'':k.hab), nom:String(nom==null?'':nom), doc:String(doc==null?'':doc), edad:String(edad==null?'':edad), ec:String(ec==null?'':ec), prof:String(prof==null?'':prof), proc:String(proc==null?'':proc), dest:String(dest==null?'':dest), entrada:String(entrada==null?'':entrada), salida:String(salida==null?'':salida) });
+    filas.push({ ts:k.ts, dia:String(dia==null?'':dia), hab:String(k.hab==null?'':k.hab), nom:String(nom==null?'':nom), doc:String(doc==null?'':doc), edad:String(edad==null?'':edad), ec:String(ec==null?'':ec), prof:String(prof==null?'':prof), proc:String(proc==null?'':proc), dest:String(dest==null?'':dest), pais:String(pais==null?'':pais), entrada:String(entrada==null?'':entrada), salida:String(salida==null?'':salida) });
   });
   filas.sort((a,b)=> new Date(a.ts)-new Date(b.ts));
+  if(polSoloExtr) return filas.filter(f=>esExtranjeroPais(f.pais));
   return filas;
 }
 function polFechaTxt(iso){ return iso?fechaDDMMYYYY(iso):'—'; }
@@ -4157,11 +4172,12 @@ function renderPolicial(){
     h += '<div class="field" style="flex:1;min-width:170px"><label>Hasta</label><input type="date" value="'+polHasta+'" onchange="polSetHasta(this.value)"></div></div>';
   }
   h += '<div class="divider"></div>';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><button class="'+(polSoloExtr?'btn-primary':'btn-ghost')+'" onclick="polSetSoloExtr('+(polSoloExtr?'false':'true')+')">'+(polSoloExtr?'🌎 Mostrando SOLO extranjeros':'🌎 Solo extranjeros')+'</button><span style="font-size:12px;color:#8893a5">'+(polSoloExtr?'Toca para volver a ver a todos los huéspedes.':'Muestra solo huéspedes de otro país (no Venezuela).')+'</span></div>';
   h += '<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn-primary" onclick="imprimirPolicial()">🖨️ Imprimir (Epson LX-300)</button>';
   h += '<button class="btn-ghost" onclick="exportarPolicialXLS()">⬇️ Excel</button></div>';
   h += '</div>';
 
-  h += '<div class="stats"><div class="stat" style="border-left-color:#7c3aed"><div class="n">'+filas.length+'</div><div class="l">Huéspedes en el período</div></div></div>';
+  h += '<div class="stats"><div class="stat" style="border-left-color:#7c3aed"><div class="n">'+filas.length+'</div><div class="l">'+(polSoloExtr?'Extranjeros en el período':'Huéspedes en el período')+'</div></div></div>';
 
   if(!filas.length){
     h += '<div class="empty-guia"><span class="ico">🚔</span><div class="t">No hay huéspedes registrados en '+(polFiltro==='dia'?'ese día':'ese rango')+'</div><div class="s">Cuando Recepción haga check-in a un huésped, aquí aparecerá su registro.</div></div>';
@@ -4169,9 +4185,9 @@ function renderPolicial(){
   }
 
   h += '<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:12px;overflow:auto">';
-  h += '<table class="users-table"><tr><th>Fecha entrada</th><th>Apellidos y nombres</th><th style="width:34px;text-align:center;padding-left:4px;padding-right:4px">Edad</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">E. civil</th><th>Profesión u oficio</th><th>Procedencia</th><th>Destino</th><th style="width:86px;padding-left:6px;padding-right:6px">Cédula</th><th>Fecha salida</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">Hab.</th></tr>';
+  h += '<table class="users-table"><tr><th>Fecha entrada</th><th>Apellidos y nombres</th><th style="width:34px;text-align:center;padding-left:4px;padding-right:4px">Edad</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">E. civil</th><th>Profesión u oficio</th><th>Procedencia</th><th>Destino</th><th>País</th><th style="width:86px;padding-left:6px;padding-right:6px">Cédula</th><th>Fecha salida</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">Hab.</th></tr>';
   filas.forEach(f=>{
-    h += '<tr><td style="white-space:nowrap">'+esc(f.entrada||polFechaTxt(f.dia))+'</td><td><b>'+esc(f.nom||'—')+'</b></td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.edad||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.ec||'—')+'</td><td>'+esc(f.prof||'—')+'</td><td>'+esc(f.proc||'—')+'</td><td>'+esc(f.dest||'—')+'</td><td style="white-space:nowrap;padding-left:6px;padding-right:6px">'+esc(f.doc||'—')+'</td><td style="white-space:nowrap">'+esc(f.salida||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.hab||'—')+'</td></tr>';
+    h += '<tr><td style="white-space:nowrap">'+esc(f.entrada||polFechaTxt(f.dia))+'</td><td><b>'+esc(f.nom||'—')+'</b></td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.edad||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.ec||'—')+'</td><td>'+esc(f.prof||'—')+'</td><td>'+esc(f.proc||'—')+'</td><td>'+esc(f.dest||'—')+'</td><td>'+esc(f.pais||'—')+'</td><td style="white-space:nowrap;padding-left:6px;padding-right:6px">'+esc(f.doc||'—')+'</td><td style="white-space:nowrap">'+esc(f.salida||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.hab||'—')+'</td></tr>';
   });
   h += '</table></div>';
   return h;
@@ -4193,17 +4209,18 @@ function imprimirPolicial(){
     rows += '<span class="c-prof">'+esc(f.prof||'—')+'</span>';
     rows += '<span class="c-proc">'+esc(f.proc||'—')+'</span>';
     rows += '<span class="c-dest">'+esc(f.dest||'—')+'</span>';
+    rows += '<span class="c-pais">'+esc(f.pais||'—')+'</span>';
     rows += '<span class="c-ent">'+esc(f.entrada||polFechaTxt(f.dia))+'</span>';
     rows += '<span class="c-sal">'+esc(f.salida||'—')+'</span>';
     rows += '<span class="c-hab">'+esc(f.hab||'—')+'</span>';
     rows += '</div>';
   });
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Reporte policial</title>';
-  html+='<style>@page{size:letter portrait;margin:8mm}*{font-family:"Courier New",monospace;box-sizing:border-box}body{margin:0;padding:0;color:#000;font-size:10px}h1{font-size:13px;margin:0;text-align:center;text-transform:uppercase;font-weight:bold}.sub{font-size:10px;text-align:center;margin:2px 0 6px}table.descr{width:100%;border:1px solid #000;border-collapse:collapse;margin-bottom:8px}table.descr td{border:1px solid #000;padding:3px 6px;font-size:9px;line-height:1.5}.cab{display:flex;font-weight:bold;border-bottom:1px solid #000;padding:2px 0;margin-bottom:2px}.fila{display:flex;padding:1px 0;page-break-inside:avoid}.fila:nth-child(odd){background:#f4f4f4}.cab span,.fila span{overflow:hidden;white-space:nowrap;padding-right:4px}.c-nom{flex:1 1 20%}.c-doc{flex:0 0 14%}.c-ed{flex:0 0 5%}.c-ec{flex:0 0 5%}.c-prof{flex:1 1 15%}.c-proc{flex:1 1 12%}.c-dest{flex:1 1 12%}.c-ent{flex:0 0 10%}.c-sal{flex:0 0 10%}.c-hab{flex:0 0 5%}.firmas{display:flex;gap:30px;margin-top:30px}.firma{flex:1;border-top:1px solid #000;padding-top:4px;font-size:9px;text-align:center}@media print{body{padding:0}.fila:nth-child(odd){background:none}}</style></head><body>';
+  html+='<style>@page{size:letter portrait;margin:8mm}*{font-family:"Courier New",monospace;box-sizing:border-box}body{margin:0;padding:0;color:#000;font-size:10px}h1{font-size:13px;margin:0;text-align:center;text-transform:uppercase;font-weight:bold}.sub{font-size:10px;text-align:center;margin:2px 0 6px}table.descr{width:100%;border:1px solid #000;border-collapse:collapse;margin-bottom:8px}table.descr td{border:1px solid #000;padding:3px 6px;font-size:9px;line-height:1.5}.cab{display:flex;font-weight:bold;border-bottom:1px solid #000;padding:2px 0;margin-bottom:2px}.fila{display:flex;padding:1px 0;page-break-inside:avoid}.fila:nth-child(odd){background:#f4f4f4}.cab span,.fila span{overflow:hidden;white-space:nowrap;padding-right:4px}.c-nom{flex:1 1 18%}.c-doc{flex:0 0 13%}.c-ed{flex:0 0 5%}.c-ec{flex:0 0 5%}.c-prof{flex:1 1 12%}.c-proc{flex:1 1 10%}.c-dest{flex:1 1 10%}.c-pais{flex:1 1 9%}.c-ent{flex:0 0 9%}.c-sal{flex:0 0 9%}.c-hab{flex:0 0 5%}.firmas{display:flex;gap:30px;margin-top:30px}.firma{flex:1;border-top:1px solid #000;padding-top:4px;font-size:9px;text-align:center}@media print{body{padding:0}.fila:nth-child(odd){background:none}}</style></head><body>';
   html+='<h1>'+esc(hotelNombre())+'</h1>';
-  html+='<div class="sub">REPORTE DE HUÉSPEDES · '+esc(polTituloTexto())+'</div>';
+  html+='<div class="sub">'+(polSoloExtr?'REPORTE DE HUÉSPEDES EXTRANJEROS':'REPORTE DE HUÉSPEDES')+' · '+esc(polTituloTexto())+'</div>';
   html+='<table class="descr"><tr><td><b>Período:</b> '+esc(polTituloTexto())+'</td><td><b>Huéspedes registrados:</b> '+filas.length+'</td></tr><tr><td colspan="2"><b>Detalle de los huéspedes que entraron al hotel</b> (fecha de entrada, apellidos y nombres, documento, edad, estado civil, profesión, procedencia, destino, fecha de salida y habitación). Generado: '+esc(new Date().toLocaleString('es-VE'))+'</td></tr></table>';
-  html+='<div class="cab"><span class="c-nom">Apellidos y nombres</span><span class="c-doc">Cédula</span><span class="c-ed">Edad</span><span class="c-ec">E. civ.</span><span class="c-prof">Profesión u oficio</span><span class="c-proc">Procedencia</span><span class="c-dest">Destino</span><span class="c-ent">Entrada</span><span class="c-sal">Salida</span><span class="c-hab">Hab.</span></div>';
+  html+='<div class="cab"><span class="c-nom">Apellidos y nombres</span><span class="c-doc">Cédula</span><span class="c-ed">Edad</span><span class="c-ec">E. civ.</span><span class="c-prof">Profesión u oficio</span><span class="c-proc">Procedencia</span><span class="c-dest">Destino</span><span class="c-pais">País</span><span class="c-ent">Entrada</span><span class="c-sal">Salida</span><span class="c-hab">Hab.</span></div>';
   html+=rows;
   html+='<div class="firmas"><div class="firma">Recepción</div><div class="firma">Revisado por</div></div>';
   html+='</body></html>';
@@ -4213,9 +4230,9 @@ function imprimirPolicial(){
 function exportarPolicialXLS(){
   const filas = polRegistros();
   if(!filas.length){ alert('No hay huéspedes para exportar en ese período.'); return; }
-  const headers=['Fecha entrada','Apellidos y nombres','Edad','E. civil','Profesión u oficio','Procedencia','Destino','Cédula','Fecha salida','Hab.'];
-  const rows=filas.map(f=>[f.entrada||polFechaTxt(f.dia), f.nom||'', f.edad||'', f.ec||'', f.prof||'', f.proc||'', f.dest||'', f.doc||'', f.salida||'', f.hab||'']);
-  _descargarXLS('reporte_policial_'+((polFiltro==='dia')?polDia:(polDesde+'_'+polHasta))+'.xls', headers, rows);
+  const headers=['Fecha entrada','Apellidos y nombres','Edad','E. civil','Profesión u oficio','Procedencia','Destino','País','Cédula','Fecha salida','Hab.'];
+  const rows=filas.map(f=>[f.entrada||polFechaTxt(f.dia), f.nom||'', f.edad||'', f.ec||'', f.prof||'', f.proc||'', f.dest||'', f.pais||'', f.doc||'', f.salida||'', f.hab||'']);
+  _descargarXLS((polSoloExtr?'reporte_extranjeros_':'reporte_policial_')+((polFiltro==='dia')?polDia:(polDesde+'_'+polHasta))+'.xls', headers, rows);
 }
 
 function renderOcupacionTipo(){
@@ -6610,6 +6627,7 @@ function editClienteModal(id){
     body+='<div class="field"><label>Edad</label><input id="ec-edad" type="number" min="0" max="120" value="'+escA(c.edad||'')+'"></div>';
     body+='<div class="field"><label>Estado civil</label><select id="ec-estadocivil">'+estadoCivilOptions(c.estadoCivil||'')+'</select></div>';
     body+='<div class="field"><label>Destino <span style="color:#8893a5;font-weight:400;font-size:12px">(¿hacia dónde va?)</span></label><input id="ec-destino" value="'+escA(c.destino||'')+'"></div>';
+    body+='<div class="field"><label>País / Nacionalidad</label><input id="ec-pais" value="'+escA(c.pais||'Venezuela')+'" placeholder="ej: Venezuela"></div>';
     body+='<div class="field"><label>¿Viene por una empresa?</label><input id="ec-empresaref" list="ec-empresas-list" value="'+escA(c.empresaRef||'')+'" oninput="autoLlenarEmpresaEdit()" placeholder="Escribe o elige el código o nombre de la empresa"><datalist id="ec-empresas-list">'+clientes().filter(e=>e.tipo==='empresa').map(e=>'<option value="'+escA(((e.codigo||'')+(e.nombre?(' — '+e.nombre):'')).trim())+'">').join('')+'</datalist><div id="ec-empresa-info" style="display:none;background:#e9f8ee;border:1px solid #9fdcb4;border-radius:8px;padding:9px 11px;font-size:12.5px;color:#1d6b38;margin-top:6px"></div><div style="font-size:12px;color:#8893a5;margin-top:4px">Las empresas se crean como un cliente de tipo “Empresa”. Aquí aparecen las que ya tienes registradas.</div></div>';
   }
   body+='<div class="field"><label>Notas</label><textarea id="ec-notas" rows="3" placeholder="Preferencias, acuerdos, observaciones…">'+esc(c.notas||'')+'</textarea></div>';
@@ -6637,7 +6655,7 @@ function guardarEdicionCliente(id){
     notas:(document.getElementById('ec-notas')?document.getElementById('ec-notas').value:(list[i].notas||''))
   });
   const _v=function(id){ const e=document.getElementById(id); return e?e.value.trim():null; };
-  const _campos={telefono:'ec-telefono',direccion:'ec-direccion',codigo:'ec-codigo',tipoComp:'ec-tipocomp',diasCredito:'ec-diascredito',edad:'ec-edad',empresaRef:'ec-empresaref',estadoCivil:'ec-estadocivil',destino:'ec-destino'};
+  const _campos={telefono:'ec-telefono',direccion:'ec-direccion',codigo:'ec-codigo',tipoComp:'ec-tipocomp',diasCredito:'ec-diascredito',edad:'ec-edad',empresaRef:'ec-empresaref',estadoCivil:'ec-estadocivil',destino:'ec-destino',pais:'ec-pais'};
   Object.keys(_campos).forEach(function(k){ const val=_v(_campos[k]); if(val!==null) list[i][k]=val; });
   saveClientes(list); cerrarModal(); render();
 }
