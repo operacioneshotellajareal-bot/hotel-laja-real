@@ -6305,7 +6305,15 @@ function clienteRows(){
   let list = clientes().slice().sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
   if(clientFiltro==='empresa') list=list.filter(c=>c.tipo==='empresa');
   else if(clientFiltro==='persona') list=list.filter(c=>c.tipo!=='empresa');
-  if(q){ list = list.filter(c=>((c.nombre||'')+' '+(c.apellido||'')+' '+(c.docNum||'')+' '+(c.ciudad||'')+' '+(c.correo||'')+' '+(c.codigo||'')+' '+(c.telefono||'')+' '+(c.empresaRef||'')+' '+(c.tipoComp||'')).toLowerCase().includes(q)); }
+  if(q){
+    const strip=s=>String(s==null?'':s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    const words=q.split(/\s+/).filter(Boolean);
+    list = list.filter(c=>{
+      const campos=strip((c.nombre||'')+' '+(c.apellido||'')+' '+(c.ciudad||'')+' '+(c.correo||'')+' '+(c.codigo||'')+' '+(c.telefono||'')+' '+(c.empresaRef||'')+' '+(c.tipoComp||''));
+      const docN=normDoc(c.docNum);
+      return words.every(w=>campos.includes(strip(w)) || (normDoc(w) && docN.includes(normDoc(w))));
+    });
+  }
   if(list.length===0) return '<div class="empty">No hay clientes que coincidan.</div>';
   let t='<table class="users-table"><tr><th>Nombre / Empresa</th><th>Documento</th><th>Correo</th><th>Ocupación</th><th>Ciudad</th><th style="text-align:right">Acciones</th></tr>';
   list.forEach(c=>{
