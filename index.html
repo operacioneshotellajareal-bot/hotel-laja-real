@@ -4200,6 +4200,7 @@ function imprimirPolicial(){
   const filas = polRegistros();
   if(!filas.length){ alert('No hay huéspedes para imprimir en ese período.'); return; }
   let rows='';
+  const incPais = polSoloExtr; // el país solo se imprime en el reporte de extranjeros
   filas.forEach(f=>{
     rows += '<div class="fila">';
     rows += '<span class="c-nom">'+esc(f.nom||'—')+'</span>';
@@ -4209,18 +4210,18 @@ function imprimirPolicial(){
     rows += '<span class="c-prof">'+esc(f.prof||'—')+'</span>';
     rows += '<span class="c-proc">'+esc(f.proc||'—')+'</span>';
     rows += '<span class="c-dest">'+esc(f.dest||'—')+'</span>';
-    rows += '<span class="c-pais">'+esc(f.pais||'—')+'</span>';
+    if(incPais) rows += '<span class="c-pais">'+esc(f.pais||'—')+'</span>';
     rows += '<span class="c-ent">'+esc(f.entrada||polFechaTxt(f.dia))+'</span>';
     rows += '<span class="c-sal">'+esc(f.salida||'—')+'</span>';
     rows += '<span class="c-hab">'+esc(f.hab||'—')+'</span>';
     rows += '</div>';
   });
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Reporte policial</title>';
-  html+='<style>@page{size:letter portrait;margin:8mm}*{font-family:"Courier New",monospace;box-sizing:border-box}body{margin:0;padding:0;color:#000;font-size:10px}h1{font-size:13px;margin:0;text-align:center;text-transform:uppercase;font-weight:bold}.sub{font-size:10px;text-align:center;margin:2px 0 6px}table.descr{width:100%;border:1px solid #000;border-collapse:collapse;margin-bottom:8px}table.descr td{border:1px solid #000;padding:3px 6px;font-size:9px;line-height:1.5}.cab{display:flex;font-weight:bold;border-bottom:1px solid #000;padding:2px 0;margin-bottom:2px}.fila{display:flex;padding:1px 0;page-break-inside:avoid}.fila:nth-child(odd){background:#f4f4f4}.cab span,.fila span{overflow:hidden;white-space:nowrap;padding-right:4px}.c-nom{flex:1 1 18%}.c-doc{flex:0 0 13%}.c-ed{flex:0 0 5%}.c-ec{flex:0 0 5%}.c-prof{flex:1 1 12%}.c-proc{flex:1 1 10%}.c-dest{flex:1 1 10%}.c-pais{flex:1 1 9%}.c-ent{flex:0 0 9%}.c-sal{flex:0 0 9%}.c-hab{flex:0 0 5%}.firmas{display:flex;gap:30px;margin-top:30px}.firma{flex:1;border-top:1px solid #000;padding-top:4px;font-size:9px;text-align:center}@media print{body{padding:0}.fila:nth-child(odd){background:none}}</style></head><body>';
+  html+='<style>@page{size:letter portrait;margin:8mm}*{font-family:"Courier New",monospace;box-sizing:border-box}body{margin:0;padding:0;color:#000;font-size:10px}h1{font-size:13px;margin:0;text-align:center;text-transform:uppercase;font-weight:bold}.sub{font-size:10px;text-align:center;margin:2px 0 6px}table.descr{width:100%;border:1px solid #000;border-collapse:collapse;margin-bottom:8px}table.descr td{border:1px solid #000;padding:3px 6px;font-size:9px;line-height:1.5}.cab{display:flex;font-weight:bold;border-bottom:1px solid #000;padding:2px 0;margin-bottom:2px}.fila{display:flex;padding:1px 0;page-break-inside:avoid}.fila:nth-child(odd){background:#f4f4f4}.cab span,.fila span{overflow:hidden;white-space:nowrap;padding-right:4px}'+(incPais?'.c-nom{flex:1 1 18%}.c-doc{flex:0 0 13%}.c-ed{flex:0 0 5%}.c-ec{flex:0 0 5%}.c-prof{flex:1 1 12%}.c-proc{flex:1 1 10%}.c-dest{flex:1 1 10%}.c-pais{flex:1 1 9%}.c-ent{flex:0 0 9%}.c-sal{flex:0 0 9%}.c-hab{flex:0 0 5%}':'.c-nom{flex:1 1 20%}.c-doc{flex:0 0 14%}.c-ed{flex:0 0 5%}.c-ec{flex:0 0 5%}.c-prof{flex:1 1 15%}.c-proc{flex:1 1 12%}.c-dest{flex:1 1 12%}.c-ent{flex:0 0 10%}.c-sal{flex:0 0 10%}.c-hab{flex:0 0 5%}')+'.firmas{display:flex;gap:30px;margin-top:30px}.firma{flex:1;border-top:1px solid #000;padding-top:4px;font-size:9px;text-align:center}@media print{body{padding:0}.fila:nth-child(odd){background:none}}</style></head><body>';
   html+='<h1>'+esc(hotelNombre())+'</h1>';
   html+='<div class="sub">'+(polSoloExtr?'REPORTE DE HUÉSPEDES EXTRANJEROS':'REPORTE DE HUÉSPEDES')+' · '+esc(polTituloTexto())+'</div>';
   html+='<table class="descr"><tr><td><b>Período:</b> '+esc(polTituloTexto())+'</td><td><b>Huéspedes registrados:</b> '+filas.length+'</td></tr><tr><td colspan="2"><b>Detalle de los huéspedes que entraron al hotel</b> (fecha de entrada, apellidos y nombres, documento, edad, estado civil, profesión, procedencia, destino, fecha de salida y habitación). Generado: '+esc(new Date().toLocaleString('es-VE'))+'</td></tr></table>';
-  html+='<div class="cab"><span class="c-nom">Apellidos y nombres</span><span class="c-doc">Cédula</span><span class="c-ed">Edad</span><span class="c-ec">E. civ.</span><span class="c-prof">Profesión u oficio</span><span class="c-proc">Procedencia</span><span class="c-dest">Destino</span><span class="c-pais">País</span><span class="c-ent">Entrada</span><span class="c-sal">Salida</span><span class="c-hab">Hab.</span></div>';
+  html+='<div class="cab"><span class="c-nom">Apellidos y nombres</span><span class="c-doc">Cédula</span><span class="c-ed">Edad</span><span class="c-ec">E. civ.</span><span class="c-prof">Profesión u oficio</span><span class="c-proc">Procedencia</span><span class="c-dest">Destino</span>'+(incPais?'<span class="c-pais">País</span>':'')+'<span class="c-ent">Entrada</span><span class="c-sal">Salida</span><span class="c-hab">Hab.</span></div>';
   html+=rows;
   html+='<div class="firmas"><div class="firma">Recepción</div><div class="firma">Revisado por</div></div>';
   html+='</body></html>';
