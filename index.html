@@ -2525,24 +2525,40 @@ function buscarCedula(){
   const inp=document.getElementById('m-cedula'); if(!inp) return;
   const q=normDoc(inp.value);
   const res=document.getElementById('m-cedula-res');
+  const inpN=document.getElementById('m-nombre'); const inpA=document.getElementById('m-apellido');
   if(!q){ if(res) res.innerHTML=''; try{cxcCheckinAlert();}catch(e){} return; }
   const list=clientes().filter(c=>normDoc(c.docNum).includes(q));
+  const exacto=clientes().find(c=>normDoc(c.docNum)===q);
+  // Si antes se rellenó solo y ya NO coincide exacto, limpiar para no bloquear la edición
+  if(inp.dataset && inp.dataset.auto==='1' && !exacto){ if(inpN) inpN.value=''; if(inpA) inpA.value=''; inp.dataset.auto='0'; }
+  if(exacto){
+    rellenarClienteCheckin(exacto); inp.dataset.auto='1';
+    const nom = exacto.tipo==='empresa'?exacto.nombre:((exacto.nombre||'')+' '+(exacto.apellido||'')).trim();
+    if(res) res.innerHTML='<span style="color:var(--verde)">✓ Cliente encontrado: '+esc(nom)+' ('+docLabel(exacto.docTipo)+' '+esc(exacto.docNum)+')</span>';
+    try{cxcCheckinAlert();}catch(e){}
+    return;
+  }
   if(list.length===0){
     const box=document.getElementById('m-guardar-box'); if(box) box.style.display='flex';
-    const inpN=document.getElementById('m-nombre'); const inpA=document.getElementById('m-apellido');
-    if(q.length>=5 && inp.dataset && inp.dataset.auto==='1'){ if(inpN) inpN.value=''; if(inpA) inpA.value=''; inp.dataset.auto='0'; }
     if(res) res.innerHTML='<span style="color:#b5651d">No hay ningún cliente con ese documento. Si es nuevo, se registrará solo al vender.</span>';
     try{cxcCheckinAlert();}catch(e){}
     return;
   }
-  const c = list.find(x=>normDoc(x.docNum)===q) || list[0];
-  rellenarClienteCheckin(c); inp.dataset.auto='1';
-  if(list.length===1 && normDoc(c.docNum)!==q && (c.docNum||'')){ try{ inp.value=c.docNum; }catch(e){} }
+  // Hay parecidos pero NINGUNO exacto: mostrar sugerencias para TOCAR (no se asigna solo, no bloquea borrar)
+  const sug=list.slice(0,6).map(function(c){
+    const nom = c.tipo==='empresa'?c.nombre:((c.nombre||'')+' '+(c.apellido||'')).trim();
+    return '<a href="javascript:void(0)" onclick="usarClienteCedula(\''+c.id+'\')" style="display:inline-block;color:var(--azul);font-weight:700;text-decoration:underline;margin:3px 10px 3px 0">'+esc(nom)+' ('+docLabel(c.docTipo)+' '+esc(c.docNum)+')</a>';
+  }).join('');
+  if(res) res.innerHTML='<span style="color:#8893a5">¿Buscabas a alguno de estos? Tócalo para usarlo, o sigue escribiendo la cédula completa:</span><br>'+sug;
+  try{cxcCheckinAlert();}catch(e){}
+}
+function usarClienteCedula(id){
+  const c=clientes().find(function(x){return x.id===id;}); if(!c) return;
+  const inp=document.getElementById('m-cedula'); if(inp){ if(c.docNum) inp.value=c.docNum; if(inp.dataset) inp.dataset.auto='1'; }
+  rellenarClienteCheckin(c);
+  const res=document.getElementById('m-cedula-res');
   const nom = c.tipo==='empresa'?c.nombre:((c.nombre||'')+' '+(c.apellido||'')).trim();
-  const etq = esc(nom)+' ('+docLabel(c.docTipo)+' '+esc(c.docNum)+')';
-  if(res){ res.innerHTML = (list.length>1)
-    ? '<span style="color:var(--verde)">✓ '+etq+'</span> <span style="color:#8893a5">y '+(list.length-1)+' más parecidos · escribe la cédula completa</span>'
-    : '<span style="color:var(--verde)">✓ Cliente encontrado: '+etq+'</span>'; }
+  if(res) res.innerHTML='<span style="color:var(--verde)">✓ Cliente encontrado: '+esc(nom)+' ('+docLabel(c.docTipo)+' '+esc(c.docNum)+')</span>';
   try{cxcCheckinAlert();}catch(e){}
 }
 function clienteDeHab(r){ return r && r.clienteId ? (clientes().find(c=>c.id===r.clienteId)||null) : null; }
