@@ -4185,9 +4185,9 @@ function renderPolicial(){
   }
 
   h += '<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:12px;overflow:auto">';
-  h += '<table class="users-table"><tr><th>Fecha entrada</th><th>Apellidos y nombres</th><th style="width:34px;text-align:center;padding-left:4px;padding-right:4px">Edad</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">E. civil</th><th>Profesión u oficio</th><th>Procedencia</th><th>Destino</th><th>País</th><th style="width:86px;padding-left:6px;padding-right:6px">Cédula</th><th>Fecha salida</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">Hab.</th></tr>';
+  h += '<table class="users-table"><tr><th>Fecha entrada</th><th>Apellidos y nombres</th><th style="width:34px;text-align:center;padding-left:4px;padding-right:4px">Edad</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">E. civil</th><th>Profesión u oficio</th><th>Procedencia</th><th>Destino</th><th style="width:86px;padding-left:6px;padding-right:6px">Cédula</th><th>Fecha salida</th><th style="width:40px;text-align:center;padding-left:4px;padding-right:4px">Hab.</th></tr>';
   filas.forEach(f=>{
-    h += '<tr><td style="white-space:nowrap">'+esc(f.entrada||polFechaTxt(f.dia))+'</td><td><b>'+esc(f.nom||'—')+'</b></td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.edad||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.ec||'—')+'</td><td>'+esc(f.prof||'—')+'</td><td>'+esc(f.proc||'—')+'</td><td>'+esc(f.dest||'—')+'</td><td>'+esc(f.pais||'—')+'</td><td style="white-space:nowrap;padding-left:6px;padding-right:6px">'+esc(f.doc||'—')+'</td><td style="white-space:nowrap">'+esc(f.salida||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.hab||'—')+'</td></tr>';
+    h += '<tr><td style="white-space:nowrap">'+esc(f.entrada||polFechaTxt(f.dia))+'</td><td><b>'+esc(f.nom||'—')+'</b></td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.edad||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.ec||'—')+'</td><td>'+esc(f.prof||'—')+'</td><td>'+esc(f.proc||'—')+'</td><td>'+esc(f.dest||'—')+'</td><td style="white-space:nowrap;padding-left:6px;padding-right:6px">'+esc(f.doc||'—')+'</td><td style="white-space:nowrap">'+esc(f.salida||'—')+'</td><td style="text-align:center;padding-left:4px;padding-right:4px">'+esc(f.hab||'—')+'</td></tr>';
   });
   h += '</table></div>';
   return h;
@@ -4200,7 +4200,7 @@ function imprimirPolicial(){
   const filas = polRegistros();
   if(!filas.length){ alert('No hay huéspedes para imprimir en ese período.'); return; }
   let rows='';
-  const incPais = polSoloExtr; // el país solo se imprime en el reporte de extranjeros
+  const incPais = false; // el país NO se muestra en ningún reporte; solo sirve internamente para filtrar extranjeros
   filas.forEach(f=>{
     rows += '<div class="fila">';
     rows += '<span class="c-nom">'+esc(f.nom||'—')+'</span>';
@@ -4231,8 +4231,8 @@ function imprimirPolicial(){
 function exportarPolicialXLS(){
   const filas = polRegistros();
   if(!filas.length){ alert('No hay huéspedes para exportar en ese período.'); return; }
-  const headers=['Fecha entrada','Apellidos y nombres','Edad','E. civil','Profesión u oficio','Procedencia','Destino','País','Cédula','Fecha salida','Hab.'];
-  const rows=filas.map(f=>[f.entrada||polFechaTxt(f.dia), f.nom||'', f.edad||'', f.ec||'', f.prof||'', f.proc||'', f.dest||'', f.pais||'', f.doc||'', f.salida||'', f.hab||'']);
+  const headers=['Fecha entrada','Apellidos y nombres','Edad','E. civil','Profesión u oficio','Procedencia','Destino','Cédula','Fecha salida','Hab.'];
+  const rows=filas.map(f=>[f.entrada||polFechaTxt(f.dia), f.nom||'', f.edad||'', f.ec||'', f.prof||'', f.proc||'', f.dest||'', f.doc||'', f.salida||'', f.hab||'']);
   _descargarXLS((polSoloExtr?'reporte_extranjeros_':'reporte_policial_')+((polFiltro==='dia')?polDia:(polDesde+'_'+polHasta))+'.xls', headers, rows);
 }
 
