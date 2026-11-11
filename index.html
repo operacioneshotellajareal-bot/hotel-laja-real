@@ -2492,6 +2492,7 @@ function abrirHab(num){
     body += '<div class="field" style="flex:1"><label>Niños</label><div style="margin-top:4px">'+(r.ninos||0)+'</div></div>';
     body += '<div class="field" style="flex:1"><label>Noches</label><div style="margin-top:4px">'+(r.noches||1)+'</div></div></div>';
     var _oacs=acompDe(r); if(_oacs.length){ body += '<div class="field"><label>'+(_oacs.length===1?'Acompañante':'Acompañantes ('+_oacs.length+')')+'</label><div style="margin-top:4px">'+_oacs.map(function(a){return esc((a.nombre||'(sin nombre)')+(a.docNum?(' · '+docLabel(a.docTipo)+' '+a.docNum):''));}).join('<br>')+'</div></div>'; }
+    body += '<button class="btn-ghost" style="margin:2px 0 10px" onclick="agregarAcompPost('+num+')">➕ Agregar acompañante</button>';
     var _omen=menoresDe(r); if(_omen.length){ body += '<div class="field"><label>🧒 '+(_omen.length===1?'Menor de edad':'Menores de edad ('+_omen.length+')')+'</label><div style="margin-top:4px">'+_omen.map(function(m){return esc(((m.nombre||'')+' '+(m.apellido||'')).trim()||'(sin nombre)')+' · Folio '+esc(m.folio||'—');}).join('<br>')+'</div></div>'; }
     body += '<div class="field"><label>Entrada</label><div style="margin-top:4px">'+(r.checkin||'—')+'</div></div>';
     body += '<div class="field"><label>Salida prevista</label><div style="margin-top:4px">'+(r.salida?fechaDDMMYYYY(r.salida):'—')+'</div></div>';
@@ -2778,6 +2779,35 @@ function acompDe(o){
   return [];
 }
 function renderAcompCheckin(){ pintarAcomp('m','m-acomp-box','m-personas'); }
+function agregarAcompPost(num){
+  var r=findRoom(num); if(!r || r.estado!=='ocupada'){ alert('Esta habitación no está ocupada.'); return; }
+  var h='<button class="close" onclick="cerrarModal()">×</button>';
+  h+='<h2>➕ Agregar acompañante · Hab. '+num+'</h2>';
+  h+='<p style="font-size:12.5px;color:#55637a;margin:2px 0 12px">Para cuando un acompañante llega después del check-in. Se suma a la habitación y al registro del huésped.</p>';
+  h+='<div style="display:flex;gap:8px"><input id="ap-nombre" class="inp" style="flex:1" placeholder="Nombre"><input id="ap-apellido" class="inp" style="flex:1" placeholder="Apellido"></div>';
+  h+='<div style="display:flex;gap:8px;margin-top:8px"><select id="ap-doctipo" class="inp" style="flex:0 0 150px">'+docTipoOptions('V')+'</select><input id="ap-docnum" class="inp" style="flex:1" placeholder="Número de documento"></div>';
+  h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn-gray" style="flex:1" onclick="cerrarModal()">Cancelar</button><button class="btn-green" style="flex:2" onclick="guardarAcompPost('+num+')">Agregar acompañante</button></div>';
+  showModal(h);
+  try{ var f=document.getElementById('ap-nombre'); if(f) f.focus(); }catch(e){}
+}
+function guardarAcompPost(num){
+  var r=findRoom(num); if(!r || r.estado!=='ocupada'){ alert('Esta habitación no está ocupada.'); return; }
+  var nom=((document.getElementById('ap-nombre')||{}).value||'').trim();
+  var ape=((document.getElementById('ap-apellido')||{}).value||'').trim();
+  var dt=((document.getElementById('ap-doctipo')||{}).value||'V');
+  var dn=((document.getElementById('ap-docnum')||{}).value||'').trim();
+  if(!nom){ alert('Escribe el nombre del acompañante.'); return; }
+  if(!ape){ alert('Escribe el apellido del acompañante (obligatorio para el registro policial).'); return; }
+  if(!dn){ alert('Escribe el número de documento del acompañante (obligatorio para el registro).'); return; }
+  var nombreCompleto=(nom+' '+ape).trim();
+  var acs=Array.isArray(r.acompanantes)?r.acompanantes.slice():[];
+  acs.push({nombre:nombreCompleto, docTipo:dt, docNum:dn});
+  updateRoom(num,{acompanantes:acs, personas:(parseInt(r.personas)||1)+1});
+  if(r.clienteId) registrarAcompanante(r.clienteId, {nombre:nombreCompleto, docTipo:dt, docNum:dn, hab:num});
+  try{ logKardex('acompanante', {hab:num, num:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Acompañante agregado después del check-in: '+nombreCompleto+' · '+docLabel(dt)+' '+dn, montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
+  cerrarModal(); render(); abrirHab(num);
+  try{ alert('Acompañante agregado: '+nombreCompleto); }catch(e){}
+}
 function menorFormHTML(prefix, i, m){
   m=m||{};
   let h='<div style="background:#fff6e5;border:1px solid #f3c96b;border-radius:10px;padding:10px 12px;margin-bottom:8px">';
