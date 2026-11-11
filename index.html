@@ -251,7 +251,7 @@ const SB_APP_EMAIL = 'operador@hotellajareal.com';
 const SB_APP_PASS  = 'LajaReal2026-Caja';
 /* Cajas de datos que se comparten entre todos los equipos.
    OJO: 'session' NO se comparte (cada equipo inicia sesión aparte). */
-const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos','forzarCierre','enviosAdmin','chat','chatLeidos','cxc','restaurantes'];
+const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos','forzarCierre','enviosAdmin','chat','chatLeidos','cxc','restaurantes','turnosRecepcion'];
 
 /* ====== ALMACENAMIENTO (local + nube) ====== */
 /* ====== COLA DE SINCRONIZACION OFFLINE ======
@@ -434,6 +434,7 @@ function seed(){
   if(!DB.get('metodosPago')) DB.set('metodosPago', METODOS.slice());
   if(DB.get('pagoControl')===undefined) DB.set('pagoControl', 0);
   if(!DB.get('tiposHab')) DB.set('tiposHab', TIPOS.slice());
+  if(!DB.get('turnosRecepcion')) DB.set('turnosRecepcion', [{nombre:'Día',desde:7,hasta:15},{nombre:'Noche',desde:15,hasta:7}]);
   if(!DB.get('preciosTipo')) DB.set('preciosTipo', {});
   if(!DB.get('permisos')) DB.set('permisos', {});
 }
@@ -977,6 +978,20 @@ function exportarAutorizadasXLS(){
   _descargarXLS('autorizadas_'+autMes+'.xls', headers, rows);
 }
 
+function renderRestaurantesAdmin(){
+  const rs=restaurantes();
+  let h='<div class="section-title">🍽️ Nombres de los restaurantes</div>';
+  if(!(session() && session().rol==='master')){
+    h+='<div class="empty-guia"><span class="ico">🔒</span><div class="t">Solo el Master puede cambiar los restaurantes</div><div class="s">Entra con el usuario Master para poder editarlos.</div></div>';
+    return h;
+  }
+  h+='<div style="background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:16px;max-width:620px">';
+  h+='<p style="font-size:12.5px;color:#55637a;margin-top:0;line-height:1.55">Estos son los nombres que aparecen cuando Recepción anota una <b>comida</b> o un <b>minibar</b> a una habitación. Puedes cambiarlos, agregar o quitar. Lo ya registrado antes no se borra.</p>';
+  rs.forEach((n,i)=>{ h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><input id="rst-'+i+'" value="'+escA(n)+'" style="flex:1"><button class="btn-ghost" style="padding:6px 10px" onclick="guardarNombreRest('+i+')">Guardar</button><button class="btn-red" style="padding:6px 10px" onclick="eliminarRest('+i+')">Eliminar</button></div>'; });
+  h+='<div style="display:flex;gap:8px;align-items:center;margin-top:12px"><input id="rst-nuevo" placeholder="ej: Restaurante La Terraza" style="flex:1"><button class="btn-green" style="padding:6px 12px" onclick="agregarRest()">+ Agregar</button></div>';
+  h+='</div>';
+  return h;
+}
 function renderServicioAdmin(){
   let list=servicioDelMes(servMes);
   const rs=restaurantes();
@@ -3920,7 +3935,7 @@ function renderAdmin(){
   if(adminTab==='cxc' && !cxcAdminOn()) adminTab='resumen';
   let html = '<div class="section-title">Panel de Administración</div>';
   html += '<div class="tabs-wrap"><div class="tabs">'+
-    tabBtn('tablero','📋 Tablero del día')+tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('reservas','Reservas')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+tabBtn('cobrar','Cobrar')+(cxcAdminOn()?tabBtn('cxc','💳 CXC'):'')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','Reporte de pagos')+tabBtn('promociones','Promociones')+tabBtn('mantenimiento','Mantenimiento')+tabBtn('policial','🚔 Reporte policial')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div></div>';
+    tabBtn('tablero','📋 Tablero del día')+tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('reservas','Reservas')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+tabBtn('cobrar','Cobrar')+(cxcAdminOn()?tabBtn('cxc','💳 CXC'):'')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','Reporte de pagos')+tabBtn('promociones','Promociones')+tabBtn('restaurantes','🍽️ Restaurantes')+tabBtn('turnosrecep','🕐 Turnos recepción')+tabBtn('mantenimiento','Mantenimiento')+tabBtn('policial','🚔 Reporte policial')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div></div>';
   if(adminTab==='tablero'){ c.innerHTML = html + renderTablero(); return; }
   if(adminTab==='cxc'){ c.innerHTML = html + renderCxC(); return; }
   if(adminTab==='resumen'){
@@ -3967,6 +3982,10 @@ function renderAdmin(){
     html += '<div class="section-title" style="font-size:15px;margin-top:0">Mantenimiento · Reportes</div>' + mantenimientoBody(true);
   } else if(adminTab==='policial'){
     html += renderPolicialSeguro();
+  } else if(adminTab==='restaurantes'){
+    html += renderRestaurantesAdmin();
+  } else if(adminTab==='turnosrecep'){
+    html += renderTurnosRecepAdmin();
   } else {
     html += '<div style="background:#fff;padding:20px;border-radius:12px;max-width:560px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:18px">';
     html += '<div class="section-title" style="font-size:15px;margin-top:0">Respaldo de la base de datos</div>';
@@ -6807,6 +6826,26 @@ let kardexTurnoSel = '';
 function turnos(){ return DB.get('turnos', []); }
 function saveTurnos(t){ DB.set('turnos', t); }
 function turnoActivo(){ return turnos().find(t=>t.abierto)||null; }
+/* ---- Turnos de recepción (configurables por el Master) ---- */
+function turnosRecepcion(){ var d=DB.get('turnosRecepcion'); if(!d||!d.length){ d=[{nombre:'Día',desde:7,hasta:15},{nombre:'Noche',desde:15,hasta:7}]; } return d; }
+function saveTurnosRecepcion(a){ DB.set('turnosRecepcion', a); }
+function fmtHora12(h){ h=Number(h)||0; var ap=h<12?'a.m.':'p.m.'; var hr=h%12; if(hr===0)hr=12; return hr+':00 '+ap; }
+function turnoRecepDe(h){ var list=turnosRecepcion(); for(var i=0;i<list.length;i++){ var t=list[i]; var d=Number(t.desde),f=Number(t.hasta); if(d<f){ if(h>=d&&h<f) return t; } else { if(h>=d||h<f) return t; } } return null; }
+function horaOptions(sel){ sel=Number(sel); var o=''; for(var hh=0;hh<24;hh++){ o+='<option value="'+hh+'"'+(hh===sel?' selected':'')+'>'+fmtHora12(hh)+'</option>'; } return o; }
+function renderTurnosRecepAdmin(){
+  var h='<div class="section-title">🕐 Turnos de recepción</div>';
+  if(!(session() && session().rol==='master')){ h+='<div class="empty-guia"><span class="ico">🔒</span><div class="t">Solo el Master puede cambiar los turnos</div><div class="s">Entra con el usuario Master para poder editarlos.</div></div>'; return h; }
+  var list=turnosRecepcion();
+  h+='<div style="background:#fff;border:1px solid #e4e9f2;border-radius:12px;padding:16px;max-width:700px">';
+  h+='<p style="font-size:12.5px;color:#55637a;margin-top:0;line-height:1.6">Define los turnos de trabajo de recepción: nombre, hora de <b>entrada</b> y hora de <b>salida</b>. Cuando un recepcionista intente <b>cerrar su turno antes de la hora de salida</b>, la app le dará una <b>advertencia</b> (igual podrá cerrarlo si de verdad lo necesita). <b>Abrir</b> el turno no tiene restricción de hora. Un turno de noche puede salir al día siguiente (ej: entra 3:00 p.m. y sale 7:00 a.m.).</p>';
+  list.forEach(function(t,i){ h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap"><input id="trn-nom-'+i+'" value="'+escA(t.nombre||'')+'" placeholder="Nombre del turno" style="flex:1;min-width:130px"><span style="font-size:12px;color:#8893a5">Entra</span><select id="trn-des-'+i+'" style="min-width:112px">'+horaOptions(t.desde)+'</select><span style="font-size:12px;color:#8893a5">Sale</span><select id="trn-has-'+i+'" style="min-width:112px">'+horaOptions(t.hasta)+'</select><button class="btn-ghost" style="padding:6px 10px" onclick="guardarTurnoRecep('+i+')">Guardar</button><button class="btn-red" style="padding:6px 10px" onclick="eliminarTurnoRecep('+i+')">Eliminar</button></div>'; });
+  h+='<div class="divider"></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input id="trn-nom-nuevo" placeholder="ej: Tarde" style="flex:1;min-width:130px"><span style="font-size:12px;color:#8893a5">Entra</span><select id="trn-des-nuevo" style="min-width:112px">'+horaOptions(14)+'</select><span style="font-size:12px;color:#8893a5">Sale</span><select id="trn-has-nuevo" style="min-width:112px">'+horaOptions(22)+'</select><button class="btn-green" style="padding:6px 12px" onclick="agregarTurnoRecep()">+ Agregar turno</button></div>';
+  h+='</div>';
+  return h;
+}
+function guardarTurnoRecep(i){ if(!(session()&&session().rol==='master')){ alert('Solo el Master puede cambiar los turnos.'); return; } var a=turnosRecepcion().slice(); var nom=(document.getElementById('trn-nom-'+i).value||'').trim(); var des=parseInt(document.getElementById('trn-des-'+i).value); var has=parseInt(document.getElementById('trn-has-'+i).value); if(!nom){ alert('Escribe un nombre para el turno.'); return; } if(des===has){ alert('La hora de entrada y la de salida no pueden ser iguales.'); return; } a[i]={nombre:nom,desde:des,hasta:has}; saveTurnosRecepcion(a); render(); alert('Turno guardado.'); }
+function eliminarTurnoRecep(i){ if(!(session()&&session().rol==='master')){ alert('Solo el Master puede quitar turnos.'); return; } var a=turnosRecepcion().slice(); if(a.length<=1){ alert('Debe quedar al menos un turno.'); return; } if(!confirm('¿Quitar el turno '+(a[i].nombre||'')+'?')) return; a.splice(i,1); saveTurnosRecepcion(a); render(); }
+function agregarTurnoRecep(){ if(!(session()&&session().rol==='master')){ alert('Solo el Master puede agregar turnos.'); return; } var nom=(document.getElementById('trn-nom-nuevo').value||'').trim(); var des=parseInt(document.getElementById('trn-des-nuevo').value); var has=parseInt(document.getElementById('trn-has-nuevo').value); if(!nom){ alert('Escribe un nombre para el turno.'); return; } if(des===has){ alert('La hora de entrada y la de salida no pueden ser iguales.'); return; } var a=turnosRecepcion().slice(); a.push({nombre:nom,desde:des,hasta:has}); saveTurnosRecepcion(a); render(); }
 function kardexAll(){ return DB.get('kardex', []); }
 function kardexDeTurno(id){ return kardexAll().filter(k=>k.turnoId===id); }
 function logKardex(tipo, data){
@@ -6842,6 +6881,7 @@ function pedirAbrirTurno(){
 function abrirTurnoDesdeAviso(){ cerrarModal(); abrirTurno(); }
 function cerrarTurno(){
   const t=turnos(); const a=t.find(x=>x.abierto); if(!a){ alert('No hay ningún turno abierto.'); return; }
+  try{ var _iniT=new Date(a.inicio); var _trRec=turnoRecepDe(_iniT.getHours()); if(_trRec){ var _cierreT=new Date(_iniT); _cierreT.setHours(Number(_trRec.hasta),0,0,0); if(_cierreT<=_iniT) _cierreT.setDate(_cierreT.getDate()+1); if(new Date()<_cierreT){ if(!confirm('⚠️ TODAVÍA no es la hora de cerrar tu turno.\n\nTu turno '+(_trRec.nombre||'')+' cierra a las '+fmtHora12(_trRec.hasta)+'.\n\nSi lo cierras ahora, el corte se hará antes de tiempo.\n\n¿Cerrar de todas formas?')) return; } } }catch(_){}
   if(!confirm('¿Cerrar el turno de '+a.nombre+'?\n\nSe hará el CORTE completo: todo lo que se cobró en este turno y las habitaciones que quedan sin cobrar (pasan como pendientes para el siguiente turno).')) return;
   a.fin=new Date().toISOString(); a.abierto=false; saveTurnos(t);
   // Al cerrar el turno se envía automáticamente el corte a la bandeja de Administración
