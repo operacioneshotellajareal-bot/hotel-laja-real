@@ -4082,7 +4082,7 @@ function usoSalonCampos(pref){
     h+='<input id="'+pref+'-cant" type="number" min="0" step="0.01" value="1" style="width:80px;padding:8px 9px;border:1.5px solid #d7d7e2;border-radius:8px">';
     h+='<button class="btn-gray" style="padding:8px 13px" onclick="usoSalonAdd(\''+pref+'\')">+ Agregar</button>';
     h+='</div>';
-    h+='<div style="font-size:11.5px;color:#8893a5;margin:-2px 0 8px">Si es bolsa de basura, escribe las bolsas sueltas.</div>';
+    h+='<div style="font-size:11.5px;color:#8893a5;margin:-2px 0 8px">Escribe la cantidad en unidades sueltas (si el producto viene en caja, bulto o rollo, el sistema hace la equivalencia).</div>';
   }
   h+='<div id="'+pref+'-lista"></div>';
   return h;
@@ -4845,7 +4845,7 @@ function mantenimientoListaHTML(perm){
   }
   return h;
 }
-/* ====== INVENTARIO DE MANTENIMIENTO (interno del departamento: bombillos, pilas, repuestos) ====== */
+/* ====== INVENTARIO DE MANTENIMIENTO (almacén del departamento: cualquier producto o servicio) ====== */
 var _invVer='lista';
 var _invMovModo='unidad';
 function invProductos(){ var a=DB.get('invProductos',null); return Array.isArray(a)?a:[]; }
@@ -4856,32 +4856,36 @@ function invFind(id){ return invProductos().find(function(x){ return String(x.id
 function invCant(p){ return Math.round(Number(p&&p.cantidad||0)*100)/100; }
 function invBajo(p){ var m=Number(p&&p.minimo||0); return m>0 && invCant(p)<m; }
 function invUnidad(p){ return (p&&p.unidad)?p.unidad:'Unidad'; }
-/* ====== POR ROLLO (bolsas de basura: se entregan por unidad y por rollo) ====== */
-function invRollo(p){ return !!(p&&p.porRollo); }
+/* [ENVASE] Un producto puede venir en envase/paquete/bulto/rollo/caja: se maneja por unidad suelta y por envase */
+function invRollo(p){ return !!((p&&p.porRollo) || Number(p&&p.udsPorRollo||0)>0); }
 function invUdsRollo(p){ var u=Number(p&&p.udsPorRollo||0); return u>0?u:0; }
-function invEquiv(p,cant){ var u=invUdsRollo(p); return (invRollo(p)&&u>0)?(Math.round((Number(cant||0)/u)*100)/100):null; } // bolsas -> rollos
+function invEnvNombre(p){ var e=(p&&p.envase!=null?String(p.envase):'').trim(); return e||'envase'; }
 function invTexto(p){
   var c=invCant(p), u=invUdsRollo(p);
   if(invRollo(p) && u>0){
-    // la cantidad SIEMPRE se guarda en bolsas sueltas
-    var rollos=Math.round((c/u)*100)/100;
-    return c+' bolsa(s) (≈ '+rollos+' rollo(s) de '+u+')';
+    // la cantidad SIEMPRE se guarda en unidades sueltas
+    var envs=Math.round((c/u)*100)/100;
+    var envN=invEnvNombre(p);
+    return c+' '+invUnidad(p)+' (≈ '+envs+' '+envN+(envs===1?'':'s')+' de '+u+')';
   }
   return c+' '+invUnidad(p);
 }
 function invPackCampos(pref, p){
   var on = p?invRollo(p):false;
   var u = p?(invUdsRollo(p)||''):'';
+  var env = p?(p.envase||''):'';
   var h='<div class="field" style="background:#f7f9fc;border:1px solid #e3e9f2;border-radius:10px;padding:10px 12px">';
-  h+='<label style="display:flex;align-items:center;gap:8px;font-weight:700"><input id="'+pref+'-rollo" type="checkbox" '+(on?'checked':'')+' style="width:16px;height:16px"> Se entrega por unidad y por rollo</label>';
-  h+='<div style="font-size:12px;color:#667;margin:4px 0 8px">Marca esto para las bolsas de basura: cuentas los rollos que hay y el sistema calcula las bolsas.</div>';
-  h+='<div style="font-size:12.5px;color:#445;margin-bottom:4px">¿Cuántas bolsas trae un rollo?</div>';
-  h+='<input id="'+pref+'-uds" type="number" min="1" step="1" value="'+u+'" placeholder="ej: 20" style="width:120px;padding:7px 9px;border:1.5px solid #d7d7e2;border-radius:8px">';
-  h+='</div>';
+  h+='<label style="display:flex;align-items:center;gap:8px;font-weight:700"><input id="'+pref+'-rollo" type="checkbox" '+(on?'checked':'')+' style="width:16px;height:16px"> Se lleva por unidad y por envase</label>';
+  h+='<div style="font-size:12px;color:#667;margin:4px 0 8px">Márcalo si lo compras por bulto, caja, paquete, rollo, galón o paca, y también lo cuentas suelto. Así puedes sacar “2 cajas” y el sistema descuenta las unidades.</div>';
+  h+='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">';
+  h+='<div><div style="font-size:12.5px;color:#445;margin-bottom:4px">¿Cómo se llama el envase?</div><input id="'+pref+'-env" value="'+esc(env)+'" placeholder="caja, bulto, paquete, rollo…" style="width:170px;padding:7px 9px;border:1.5px solid #d7d7e2;border-radius:8px"></div>';
+  h+='<div><div style="font-size:12.5px;color:#445;margin-bottom:4px">¿Cuántas unidades trae?</div><input id="'+pref+'-uds" type="number" min="1" step="1" value="'+u+'" placeholder="ej: 12" style="width:120px;padding:7px 9px;border:1.5px solid #d7d7e2;border-radius:8px"></div>';
+  h+='</div></div>';
   return h;
 }
 function invLeeRollo(pref){ var e=document.getElementById(pref+'-rollo'); return !!(e&&e.checked); }
 function invLeeUds(pref){ var e=document.getElementById(pref+'-uds'); var v=parseFloat(e&&e.value); return (isNaN(v)||v<=0)?0:v; }
+function invLeeEnv(pref){ var e=document.getElementById(pref+'-env'); return String((e&&e.value)||'').trim(); }
 function invTodos(){ return invProductos().slice().sort(function(a,b){ var ba=invBajo(a)?0:1, bb=invBajo(b)?0:1; if(ba!==bb) return ba-bb; return String(a.nombre||'').localeCompare(String(b.nombre||'')); }); }
 function invVer(v){ _invVer=(_invVer===v?'lista':v); render(); }
 function puedeInv(){ var rol=(session()&&session().rol)||''; return rol==='mantenimiento' || esMaster(rol); }
@@ -4892,9 +4896,9 @@ function inventarioBody(){
   var bajos=lst.filter(invBajo);
   var h='';
   h+='<div class="section-title" style="font-size:15px;margin-top:26px">📦 Inventario de Mantenimiento</div>';
-  h+='<div style="font-size:12.5px;color:#667;margin-bottom:10px;line-height:1.6">Control interno del departamento: bombillos, pilas de los controles, repuestos de los aires. Agrega lo que llega y saca lo que se usa.</div>';
+  h+='<div style="font-size:12.5px;color:#667;margin-bottom:10px;line-height:1.6">El almacén del departamento: bombillos, pilas, repuestos de aire, productos de limpieza, herramientas, tornillería… cualquier cosa o servicio interno que se compre y se use. Aquí anotas lo que entra y sale, y lo que se usa al reparar una habitación o un salón se descuenta solo.</div>';
   h+='<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">';
-  h+='<button class="'+(('lista'===_invVer)?'btn-primary':'btn-ghost')+'" style="padding:7px 14px;font-size:13px" onclick="invVer(\'lista\')">📋 Lista</button>';
+  h+='<button class="'+(('lista'===_invVer)?'btn-primary':'btn-ghost')+'" style="padding:7px 14px;font-size:13px" onclick="invVer(\'lista\')">📋 Lista y existencias</button>';
   h+='<button class="'+(('movs'===_invVer)?'btn-primary':'btn-ghost')+'" style="padding:7px 14px;font-size:13px" onclick="invVer(\'movs\')">↕️ Movimientos</button>';
   h+='</div>';
   if(bajos.length){
@@ -4916,7 +4920,7 @@ function inventarioBody(){
     return h;
   }
   if(!lst.length){
-    h+='<div class="empty">Todavía no hay productos. Escribe el primero abajo (ej: Bombillos, Pilas AAA, Repuesto de aire).</div>';
+    h+='<div class="empty">Todavía no hay productos. Escribe el primero abajo (ej: Bombillos LED, Pilas AAA, Repuesto de aire, Detergente).</div>';
   } else {
     h+='<div class="task-list">';
     lst.forEach(function(p){
@@ -4934,48 +4938,54 @@ function inventarioBody(){
   }
   h+='<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
   h+='<button class="btn-gray" onclick="invNuevoModal()">➕ Crear producto</button>';
-  h+='<button class="btn-orange" onclick="insumosEntregaModal()">📦 Entrega de bolsas</button>';
-  h+='<button class="btn-primary" onclick="imprimirInventarioMant()">🖨️ Imprimir inventario</button>';
+  h+='<button class="btn-primary" onclick="invEntregaModal()">📤 Registrar salida / entrega</button>';
+  h+='<button class="btn-ghost" onclick="imprimirInventarioMant()">🖨️ Imprimir inventario</button>';
   h+='</div>';
   return h;
 }
-/* [BOLSAS] Entrega manual de bolsas: descuenta y anota quien la recibio */
-function insumosEntregaModal(){
+/* [SALIDA] Salida / entrega de cualquier cosa del almacen: descuenta y anota quien la recibio y para que */
+var _entLineas=[];
+function invEntregaModal(){
   if(!puedeInv()){ alert('Esto lo maneja Mantenimiento.'); return; }
-  var bolsas=invProductos().filter(function(p){ return invRollo(p) || /bolsa/i.test(String(p.nombre||'')); });
+  _entLineas=[];
   var b='<button class="close" onclick="cerrarModal()">×</button>';
-  b+='<h2>📦 Entrega de bolsas</h2>';
-  b+='<div class="rstate" style="color:var(--gris)">Se descuenta del inventario y queda anotado quién la recibió.</div>';
-  if(!bolsas.length){
-    b+='<div class="empty" style="font-size:12.5px">No hay bolsas en el inventario. Créalas en Inventario marcando <b>“Se entrega por rollo”</b>.</div>';
+  b+='<h2>📤 Registrar salida del almacén</h2>';
+  b+='<div class="rstate" style="color:var(--gris)">Sirve para cualquier cosa: entregar a una persona o departamento, usarla en un piso, en un salón, mandarla a reparar. Descuenta del inventario y queda anotado.</div>';
+  var lst=invProductos().filter(function(p){ return invCant(p)>0; });
+  if(!lst.length){
+    b+='<div class="empty" style="font-size:12.5px">No hay productos con existencia. Agrégalos primero en Inventario.</div>';
     b+='<div class="divider"></div><div class="actions"><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>';
     showModal(b); return;
   }
-  b+='<div class="field"><label>¿Cuál bolsa?</label><select id="ent-prod" style="width:100%;padding:8px 9px;border:1.5px solid #d7d7e2;border-radius:8px">';
-  bolsas.forEach(function(p){ b+='<option value="'+p.id+'">'+esc(p.nombre)+' — hay '+esc(invTexto(p))+'</option>'; });
+  b+='<div class="field"><label>¿Qué sale?</label><select id="ent-prod" style="width:100%;padding:8px 9px;border:1.5px solid #d7d7e2;border-radius:8px">';
+  lst.forEach(function(p){ b+='<option value="'+p.id+'">'+esc(p.nombre)+' — hay '+esc(invTexto(p))+'</option>'; });
   b+='</select></div>';
-  b+='<div class="field"><label>¿Cuántas bolsas? <span style="color:#667;font-weight:400">(sueltas)</span></label><input id="ent-cant" type="number" min="1" step="1" value="1"></div>';
-  b+='<div class="field"><label>¿Para quién o para dónde va?</label><input id="ent-para" placeholder="ej: Ama de Llaves · piso 3 / oficina de administración / Ana"></div>';
-  b+='<div class="field"><label>Nota (opcional)</label><input id="ent-nota" placeholder="ej: entrega semanal"></div>';
-  b+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="insumosEntregaGuardar()">Entregar y descontar</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  b+='<div class="field"><label>¿Cuánto? <span style="color:#667;font-weight:400" id="ent-cant-lbl">(unidades)</span></label><input id="ent-cant" type="number" min="0" step="0.01" value="1"></div>';
+  b+='<div class="field"><label>¿A quién se le entrega? (persona o departamento)</label><input id="ent-para" placeholder="ej: Ama de Llaves, Ana, Piso 3, Administración, Taller"></div>';
+  b+='<div class="field"><label>Concepto / para qué se usa</label><input id="ent-concepto" placeholder="ej: limpieza de pisos, reparación de aire hab. 205, consumo semanal"></div>';
+  b+='<div class="field"><label>Nota (opcional)</label><input id="ent-nota" placeholder="ej: se devuelve el sobrante"></div>';
+  b+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="invEntregaGuardar()">Descontar y anotar</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
   showModal(b);
 }
-function insumosEntregaGuardar(){
+function invEntregaGuardar(){
   if(!puedeInv()){ alert('Esto lo maneja Mantenimiento.'); return; }
   var sel=document.getElementById('ent-prod'); var p=invFind(sel&&sel.value); if(!p){ return; }
   var cant=parseFloat((document.getElementById('ent-cant')||{}).value)||0;
   var para=((document.getElementById('ent-para')||{}).value||'').trim();
+  var concepto=((document.getElementById('ent-concepto')||{}).value||'').trim();
   var nota=((document.getElementById('ent-nota')||{}).value||'').trim();
-  if(!(cant>0)){ alert('Escribe cuántas bolsas.'); return; }
-  if(!para){ alert('Escribe para quién o para dónde va.'); return; }
+  if(!(cant>0)){ alert('Escribe una cantidad mayor a 0.'); return; }
+  if(!para){ alert('Escribe a quién se le entrega.'); return; }
+  if(!concepto){ alert('Escribe el concepto o para qué se usa.'); return; }
   if(cant>invCant(p)){ alert('Solo hay '+invTexto(p)+' de '+p.nombre+'.'); return; }
   var a=invProductos(); var i=a.findIndex(function(x){ return String(x.id)===String(p.id); });
   if(i<0){ return; }
   a[i].cantidad=Math.round((invCant(a[i])-cant)*100)/100;
   a[i].upd=new Date().toLocaleString('es-VE');
   invSave(a);
-  invAnotar(a[i].nombre, cant, 'sale', 'Entrega a '+para+(nota?(' · '+nota):''), a[i].id, cant+' bolsa(s) de '+a[i].nombre);
-  try{ logKardex('inventario',{hab:'', huesped:'', detalle:'Entrega de '+cant+' bolsa(s) de '+a[i].nombre+' a '+para+(nota?(' · '+nota):''), montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
+  var det='Entrega a '+para+' · '+concepto+(nota?(' · '+nota):'');
+  invAnotar(a[i].nombre, cant, 'sale', det, a[i].id, cant+' '+invUnidad(a[i]));
+  try{ logKardex('inventario',{hab:'', huesped:'', detalle:'Salió '+cant+' '+invUnidad(a[i])+' de '+a[i].nombre+' · '+det, montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
   cerrarModal();
   if(invBajo(a[i])) alert('Ojo: quedan solo '+invCant(a[i])+' '+invUnidad(a[i])+' de '+a[i].nombre+'.');
   render();
@@ -4983,13 +4993,13 @@ function insumosEntregaGuardar(){
 function invNuevoModal(){
   var b='<button class="close" onclick="cerrarModal()">×</button>';
   b+='<h2>Nuevo producto</h2>';
-  b+='<div style="font-size:12.5px;color:#667;margin-bottom:10px">Lo que usa mantenimiento: bombillos, pilas, repuestos de aire, etc.</div>';
+  b+='<div style="font-size:12.5px;color:#667;margin-bottom:10px">Cualquier cosa o servicio que use mantenimiento: bombillos, pilas, repuestos, detergente, tornillos, herramientas…</div>';
   b+='<div class="field"><label>¿Qué es?</label><input id="inv-nombre" placeholder="ej: Bombillos LED 9W"></div>';
-  b+='<div class="field"><label>Unidad</label><input id="inv-unidad" placeholder="Unidad, Par, Tubo, Galón..." value="Unidad"></div>';
-  b+='<div class="field"><label>¿Cuántos hay ahora?</label><input id="inv-cant" type="number" min="0" step="1" value="0"></div>';
-  b+='<div class="field"><label>Avisar cuando queden menos de (opcional)</label><input id="inv-min" type="number" min="0" step="1" value="" placeholder="ej: 5"></div>';
+  b+='<div class="field"><label>Unidad</label><input id="inv-unidad" placeholder="Unidad, Par, Tubo, Galón, Metro…" value="Unidad"></div>';
+  b+='<div class="field"><label>¿Cuántos hay ahora?</label><input id="inv-cant" type="number" min="0" step="0.01" value="0"></div>';
+  b+='<div class="field"><label>Avisar cuando queden menos de (opcional)</label><input id="inv-min" type="number" min="0" step="0.01" value="" placeholder="ej: 5"></div>';
   b+='<div class="field"><label>¿Dónde se guarda? (opcional)</label><input id="inv-ubi" placeholder="ej: cuarto de mantenimiento"></div>';
-  b+=invPackCampos('inv');   // [ROLLO] se entrega por unidad y por rollo
+  b+=invPackCampos('inv');   // [ENVASE] se lleva por unidad y por envase
   b+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="invGuardarNuevo()">Crear</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
   showModal(b);
 }
@@ -5002,7 +5012,7 @@ function invGuardarNuevo(){
   if(a.some(function(x){ return String(x.nombre||'').toLowerCase()===n.toLowerCase(); })){ alert('Ese producto ya está en la lista.'); return; }
   var cant=parseFloat(g('inv-cant'))||0;
   var min=parseFloat(g('inv-min'));
-  a.push({ id:'i'+Date.now(), nombre:n, unidad:g('inv-unidad')||'Unidad', cantidad:cant, minimo:(isNaN(min)?0:min), ubicacion:g('inv-ubi'), upd:new Date().toLocaleString('es-VE'), porRollo:invLeeRollo('inv'), udsPorRollo:invLeeUds('inv') });
+  a.push({ id:'i'+Date.now(), nombre:n, unidad:g('inv-unidad')||'Unidad', cantidad:cant, minimo:(isNaN(min)?0:min), ubicacion:g('inv-ubi'), upd:new Date().toLocaleString('es-VE'), porRollo:invLeeRollo('inv'), udsPorRollo:invLeeUds('inv'), envase:invLeeEnv('inv') });
   invSave(a);
   if(cant>0) invAnotar(n, cant, 'entra', 'Carga inicial', null);
   cerrarModal(); render();
@@ -5020,18 +5030,19 @@ function invMovModal(id, tipo){
   var b='<button class="close" onclick="cerrarModal()">×</button>';
   b+='<h2>'+(esEntra?'➕ Agregar':'➖ Sacar')+' · '+esc(p.nombre)+'</h2>';
   b+='<div class="rstate" style="color:var(--gris)">Hay '+esc(invTexto(p))+'</div>';
-  var _rollo = invRollo(p) && invUdsRollo(p)>0;   // [ROLLO]
+  var _rollo = invRollo(p) && invUdsRollo(p)>0;   // [ENVASE]
   var _porRollo = _rollo && (_invMovModo==='rollo');
+  var _envN = invEnvNombre(p);
   var _onEquiv = _rollo ? (' oninput="invMostrarEquiv(\''+p.id+'\',\''+tipo+'\',\''+(_porRollo?'rollo':'unidad')+'\')"') : '';
   if(_rollo){
     b+='<div class="field"><label>¿Cómo lo '+(esEntra?'estás contando':'estás sacando')+'?</label><div style="display:flex;gap:8px;flex-wrap:wrap">';
-    b+='<button class="'+(!_porRollo?'btn-primary':'btn-ghost')+'" style="padding:7px 13px;font-size:13px" onclick="invModoMov(\''+p.id+'\',\''+tipo+'\',\'unidad\')">Por bolsa (unidad)</button>';
-    b+='<button class="'+(_porRollo?'btn-primary':'btn-ghost')+'" style="padding:7px 13px;font-size:13px" onclick="invModoMov(\''+p.id+'\',\''+tipo+'\',\'rollo\')">Por rollo ('+invUdsRollo(p)+' bolsas c/u)</button>';
+    b+='<button class="'+(!_porRollo?'btn-primary':'btn-ghost')+'" style="padding:7px 13px;font-size:13px" onclick="invModoMov(\''+p.id+'\',\''+tipo+'\',\'unidad\')">Por '+esc(invUnidad(p))+' (suelto)</button>';
+    b+='<button class="'+(_porRollo?'btn-primary':'btn-ghost')+'" style="padding:7px 13px;font-size:13px" onclick="invModoMov(\''+p.id+'\',\''+tipo+'\',\'rollo\')">Por '+esc(_envN)+' ('+invUdsRollo(p)+' '+esc(invUnidad(p))+' c/u)</button>';
     b+='</div></div>';
   }
-  b+='<div class="field"><label>¿Cuánto'+(esEntra?' entró':' se usó')+'? '+(_porRollo?'<span style="color:#667;font-weight:400">(rollos)</span>':(_rollo?'<span style="color:#667;font-weight:400">(bolsas)</span>':''))+'</label><input id="inv-cant-mov" type="number" min="0" step="'+(invRollo(p)?'0.01':'1')+'" value="1"'+_onEquiv+'></div>';
+  b+='<div class="field"><label>¿Cuánto'+(esEntra?' entró':' se usó')+'? '+(_porRollo?('<span style="color:#667;font-weight:400">('+esc(_envN)+'s)</span>'):(_rollo?('<span style="color:#667;font-weight:400">('+esc(invUnidad(p))+' sueltas)</span>'):''))+'</label><input id="inv-cant-mov" type="number" min="0" step="0.01" value="1"'+_onEquiv+'></div>';
   if(_rollo) b+='<div id="inv-equiv" style="font-size:12.5px;color:#0d3b66;font-weight:700;margin:-4px 0 8px">'+invTexto(p)+' en total</div>';
-  b+='<div class="field"><label>'+(esEntra?'¿De dónde vino? (opcional)':'¿Para quién o para dónde va?'+(invRollo(p)?'':' (opcional)'))+'</label><input id="inv-det-mov" placeholder="'+(esEntra?'ej: compra en la ferretería':'ej: entregado a Ana (piso 3), hab 105, control del aire')+'"></div>';
+  b+='<div class="field"><label>'+(esEntra?'¿De dónde vino? (opcional)':'¿Para quién o para dónde va? (opcional)')+'</label><input id="inv-det-mov" placeholder="'+(esEntra?'ej: compra en la ferretería':'ej: entregado a Ana, hab. 105, control del aire, limpieza del piso 3')+'"></div>';
   b+='<div class="divider"></div><div class="actions"><button class="'+(esEntra?'btn-green':'btn-orange')+'" onclick="invGuardarMov(\''+p.id+'\',\''+tipo+'\',\''+(_porRollo?'rollo':'unidad')+'\')">'+(esEntra?'Agregar':'Sacar')+'</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
   showModal(b);
 }
@@ -5041,9 +5052,10 @@ function invMostrarEquiv(id, tipo, modo){
   var e=document.getElementById('inv-cant-mov'); var c=parseFloat(e&&e.value)||0;
   var box=document.getElementById('inv-equiv'); if(!box) return;
   var u=invUdsRollo(p); if(!(u>0)) u=1;
-  var bolsas = (modo==='rollo') ? (c*u) : c;
-  var rollos = (modo==='rollo') ? c : (c/u);
-  box.innerHTML = 'Equivale a '+(Math.round(bolsas*100)/100)+' bolsa(s) · '+(Math.round(rollos*100)/100)+' rollo(s)';
+  var sueltas = (modo==='rollo') ? (c*u) : c;
+  var envs = (modo==='rollo') ? c : (c/u);
+  var envN=invEnvNombre(p);
+  box.innerHTML = 'Equivale a '+(Math.round(sueltas*100)/100)+' '+esc(invUnidad(p))+' · '+(Math.round(envs*100)/100)+' '+esc(envN)+(Math.round(envs*100)/100===1?'':'s');
 }
 function invGuardarMov(id, tipo, modo){
   if(!puedeInv()){ alert('Solo Mantenimiento maneja el inventario.'); return; }
@@ -5051,18 +5063,19 @@ function invGuardarMov(id, tipo, modo){
   var e=document.getElementById('inv-cant-mov'); var cant=parseFloat(e&&e.value)||0;
   var d=document.getElementById('inv-det-mov'); var det=(d&&d.value?d.value:'').trim();
   if(!(cant>0)){ alert('Escribe una cantidad mayor a 0.'); return; }
-  var rollo = invRollo(p) && invUdsRollo(p)>0 && modo==='rollo';   // [ROLLO]
+  var rollo = invRollo(p) && invUdsRollo(p)>0 && modo==='rollo';   // [ENVASE]
   var udsR = invUdsRollo(p);
-  var textoCant = rollo ? (cant+' rollo(s) de '+p.nombre+' ('+(Math.round(cant*udsR*100)/100)+' bolsas)') : (cant+' '+invUnidad(p)+' de '+p.nombre);
+  var envN = invEnvNombre(p);
+  var textoCant = rollo ? (cant+' '+envN+(cant===1?'':'s')+' de '+p.nombre+' ('+(Math.round(cant*udsR*100)/100)+' '+invUnidad(p)+')') : '';
   if(rollo) cant = Math.round(cant*udsR*100)/100;
   var actual=invCant(p);
   if(tipo==='sale' && cant>actual){ alert('Solo hay '+invTexto(p)+'. No se puede sacar más.'); return; }
   var a=invProductos(); var i=a.findIndex(function(x){ return String(x.id)===String(id); });
   if(i<0) return;
-  a[i].cantidad = tipo==='sale' ? (actual-cant) : (actual+cant);
+  a[i].cantidad = tipo==='sale' ? Math.round((actual-cant)*100)/100 : Math.round((actual+cant)*100)/100;
   a[i].upd=new Date().toLocaleString('es-VE');
   invSave(a);
-  invAnotar(a[i].nombre, cant, tipo, (rollo?('Tomado por rollo · '):'')+det, a[i].id, rollo?textoCant:'');
+  invAnotar(a[i].nombre, cant, tipo, (rollo?('Tomado por '+envN+' · '):'')+det, a[i].id, rollo?textoCant:'');
   try{ logKardex('inventario',{hab:'', huesped:'', detalle:(tipo==='sale'?'Salió ':'Entró ')+cant+' '+invUnidad(a[i])+' de '+a[i].nombre+(det?(' · '+det):''), montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
   cerrarModal();
   if(tipo==='sale' && invBajo(a[i])) alert('Ojo: quedan solo '+invCant(a[i])+' '+invUnidad(a[i])+' de '+a[i].nombre+'. Hay que comprar.');
@@ -5073,10 +5086,10 @@ function invEditarModal(id){
   var b='<button class="close" onclick="cerrarModal()">×</button>';
   b+='<h2>Editar · '+esc(p.nombre)+'</h2>';
   b+='<div class="field"><label>Nombre</label><input id="inv-e-nombre" value="'+esc(p.nombre||'')+'"></div>';
-  b+='<div class="field"><label>Unidad</label><input id="inv-e-unidad" value="'+esc(invUnidad(p))+'"></div>';
-  b+='<div class="field"><label>Avisar cuando queden menos de</label><input id="inv-e-min" type="number" min="0" step="1" value="'+(p.minimo||0)+'"></div>';
+  b+='<div class="field"><label>Unidad</label><input id="inv-e-unidad" value="'+esc(invUnidad(p))+'" placeholder="Unidad, Par, Tubo, Galón…"></div>';
+  b+='<div class="field"><label>Avisar cuando queden menos de</label><input id="inv-e-min" type="number" min="0" step="0.01" value="'+(p.minimo||0)+'"></div>';
   b+='<div class="field"><label>¿Dónde se guarda?</label><input id="inv-e-ubi" value="'+esc(p.ubicacion||'')+'"></div>';
-  b+=invPackCampos('inv-e', p);   // [ROLLO]
+  b+=invPackCampos('inv-e', p);   // [ENVASE]
   b+='<div class="field"><label>Cantidad (corregir por conteo)</label><input id="inv-e-cant" type="number" min="0" step="0.01" value="'+invCant(p)+'"></div>';
   b+='<div style="font-size:12px;color:#8893a5;margin-top:-6px">Si cambias la cantidad, queda anotado como ajuste de conteo.</div>';
   b+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="invGuardarEdicion(\''+p.id+'\')">Guardar</button><button class="btn-ghost" onclick="invQuitarModal(\''+p.id+'\')">🗑️ Quitar producto</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
@@ -5095,7 +5108,7 @@ function invGuardarEdicion(id){
   a[i].unidad=g('inv-e-unidad')||'Unidad';
   a[i].minimo=parseFloat(g('inv-e-min'))||0;
   a[i].ubicacion=g('inv-e-ubi');
-  a[i].porRollo=invLeeRollo('inv-e'); a[i].udsPorRollo=invLeeUds('inv-e');
+  a[i].porRollo=invLeeRollo('inv-e'); a[i].udsPorRollo=invLeeUds('inv-e'); a[i].envase=invLeeEnv('inv-e');
   a[i].cantidad=cantNueva;
   a[i].upd=new Date().toLocaleString('es-VE');
   invSave(a);
@@ -5105,7 +5118,16 @@ function invGuardarEdicion(id){
 function invQuitarModal(id){
   var p=invFind(id); if(!p) return;
   if(!confirm('¿Quitar "'+(p.nombre||'')+'" del inventario? Los movimientos anteriores se quedan en el historial.')) return;
-  invSave(invProductos().filter(function(x){ return String(x.id)!==String(id); }));
+  var a=invProductos().filter(function(x){ return String(x.id)!==String(id); });
+  invSave(a);
+  try{
+    var pisosU=DB.get('pisos',null);
+    if(Array.isArray(pisosU) && pisosU.length){
+      var ch=false;
+      pisosU.forEach(function(pf){ var l=pf.kit||pf.items||pf.inventario; if(Array.isArray(l)){ var n=l.filter(function(x){ return String(x.prodId||x.id)!==String(id); }); if(n.length!==l.length){ if(l===pf.kit) pf.kit=n; else if(l===pf.items) pf.items=n; else pf.inventario=n; ch=true; } } });
+      if(ch) DB.set('pisos',pisosU);
+    }
+  }catch(e){}
   cerrarModal(); render();
 }
 function imprimirInventarioMant(){
@@ -5117,14 +5139,14 @@ function imprimirInventarioMant(){
     filas+='<tr'+(invBajo(p)?' style="background:#fff8ec"':'')+'><td><b>'+esc(p.nombre)+'</b></td><td>'+esc(invUnidad(p))+'</td><td style="text-align:right;font-weight:700">'+esc(invTexto(p))+'</td><td style="text-align:right">'+(p.minimo||'—')+'</td><td>'+esc(p.ubicacion||'—')+'</td><td>'+(invBajo(p)?'<b style="color:#b5651d">Comprar</b>':'Ok')+'</td></tr>';
   });
   var movs=invMovs().slice(0,60), filasM='';
-  movs.forEach(function(m){ filasM+='<tr><td>'+esc(m.fecha||'')+'</td><td><b>'+esc(m.nombre||'')+'</b></td><td>'+esc(m.etiqueta||m.tipo||'')+'</td><td style="text-align:right">'+esc(m.texto?m.texto:(m.cant+' '+invUnidad({unidad:''})))+'</td><td>'+esc(m.detalle||'—')+'</td><td>'+esc(m.por||'—')+'</td></tr>'; });
+  movs.forEach(function(m){ filasM+='<tr><td>'+esc(m.fecha||'')+'</td><td><b>'+esc(m.nombre||'')+'</b></td><td>'+esc(m.etiqueta||m.tipo||'')+'</td><td style="text-align:right">'+esc(m.texto?m.texto:(m.cant+' '))+ '</td><td>'+esc(m.detalle||'—')+'</td><td>'+esc(m.por||'—')+'</td></tr>'; });
   if(!filasM) filasM='<tr><td colspan="6" class="c" style="color:#888;padding:16px">Sin movimientos</td></tr>';
   var html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Inventario de Mantenimiento</title>';
   html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:20px;color:#0d3b66;margin:0}h2{font-size:14px;color:#0d3b66;margin:20px 0 8px;border-bottom:2px solid #0d3b66;padding-bottom:4px}table{width:100%;border-collapse:collapse;font-size:12px}th{background:#eef3fa;text-align:left;padding:7px 8px;border:1px solid #ccd;font-size:11px;text-transform:uppercase}td{padding:6px 8px;border:1px solid #dde}tr{page-break-inside:avoid}.sub{color:#667;font-size:12px;margin:4px 0 14px}.c{text-align:center}.firmas{display:flex;gap:40px;margin-top:44px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;text-align:center;font-size:11.5px;color:#445}@media print{body{padding:12px}}</style></head><body>';
   html+='<h1>'+esc(hotelNombre())+' · Inventario de Mantenimiento</h1>'+hotelLinePrint();
   html+='<div class="sub">Generado: '+esc(hoy)+' · Productos: '+lst.length+(bajos.length?(' · Por comprar: '+bajos.length):'')+'</div>';
   html+='<h2>Existencias</h2><table><tr><th>Producto</th><th>Unidad</th><th style="text-align:right">Hay</th><th style="text-align:right">Mínimo</th><th>Dónde</th><th>Estado</th></tr>'+filas+'</table>';
-  html+='<h2>Últimos movimientos</h2><table><tr><th>Fecha</th><th>Producto</th><th>Movimiento</th><th style="text-align:right">Cant.</th><th>Para qué / dónde</th><th>Quién</th></tr>'+filasM+'</table>';
+  html+='<h2>Últimos movimientos</h2><table><tr><th>Fecha</th><th>Producto</th><th>Movimiento</th><th style="text-align:right">Cant.</th><th>Concepto / a quién</th><th>Quién</th></tr>'+filasM+'</table>';
   html+='<div class="firmas"><div class="firma">Contó / Revisó<br>(Mantenimiento)</div><div class="firma">Recibido<br>(Administración)</div></div>';
   html+=piePaginaHTML()+'</body></html>';
   return imprimirHTML(html);
