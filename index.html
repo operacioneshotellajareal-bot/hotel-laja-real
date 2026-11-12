@@ -2465,11 +2465,11 @@ function reservaCanceladaMsg(r){
   if(!r) return '';
   var ant=resAnticipoUsd(r);
   if(!(ant>0.009)) return '';
-  return '\n\n⚠️ Ojo con el anticipo: se cobraron '+fmtUSD(ant)+' de esta reserva y ese dinero YA est\u00e1 en la caja del turno.\n\nSi le vas a devolver el dinero al cliente, primero registra la devoluci\u00f3n en Caja para que el arqueo cuadre (no lo borres de la lista de pagos).';
+  return '\n\n⚠️ Ojo con el anticipo: se cobraron '+fmtUSD(ant)+' de esta reserva y ese dinero YA est\u00e1 en la caja del turno.\n\nEl anticipo NO se borra de la caja: queda igual en el arqueo. Si hay que devolverle algo al cliente, eso lo maneja administraci\u00f3n.';
 }
 function resDejaAnticipo(r){
   var ant=resAnticipoUsd(r); if(!(ant>0.009)) return false;
-  return confirm('Esta reserva tiene un anticipo cobrado de '+fmtUSD(ant)+' que ya est\u00e1 en la caja.\n\n¿Continuar de todas formas? (si devuelves el dinero, reg\u00edstralo en Caja)');
+  return confirm('Esta reserva tiene un anticipo cobrado de '+fmtUSD(ant)+' que ya est\u00e1 en la caja y se queda en el arqueo.\n\n¿Continuar de todas formas?');
 }
 function eliminarReserva(loc){
   const _r=reservas().find(x=>x.loc===loc);
@@ -6348,7 +6348,7 @@ function renderCaja(){
   if(pagos.length===0){ h += '<div class="empty">No hay cobros registrados en esta fecha.</div>'; return h; }
   h += '<div class="task-list">';
   pagos.forEach(p=>{
-    h += '<div class="task"><div class="info"><b>'+(p.hab?('Hab. '+p.hab):'Cobro manual')+'</b> <span style="font-size:12.5px;color:#55637a">'+esc(p.huesped||p.concepto||'')+'</span><div class="meta">'+(p.control?('Control N° '+fmtControl(p.control)+' · '):'')+p.metodo+' · '+p.fechaStr+' · '+esc(p.usuario||'')+'</div></div>';
+    h += '<div class="task"><div class="info"><b>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</b> <span style="font-size:12.5px;color:#55637a">'+esc(p.huesped||p.concepto||'')+'</span><div class="meta">'+(p.control?('Control N° '+fmtControl(p.control)+' · '):'')+p.metodo+' · '+p.fechaStr+' · '+esc(p.usuario||'')+'</div></div>';
     h += '<div style="text-align:right"><div style="font-weight:800;color:var(--azul)">'+fmtBs(p.montoBs)+'</div><div style="font-size:12px;color:#8893a5">'+fmtUSD(p.montoUsd)+'</div>';
     if(session().rol==='admin' || puedeSup('anularPagos')) h += '<button class="btn-red" style="padding:4px 10px;margin-top:4px;font-size:12px" onclick="borrarPago('+p.id+')">Anular</button>';
     h += '</div></div>';
@@ -6418,15 +6418,15 @@ function guardarPagoManual(btn){
   const ctrl = siguienteControl();
   const pagos = DB.get('pagos',[]);
   pagos.unshift({ id:Date.now(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
-    hab:0, huesped:clienteNom, concepto:concepto||'Cobro manual', metodo:pm.metodoStr, metodos:pm.metodos,
+    hab:0, huesped:clienteNom, concepto:concepto||'Cobro suelto', metodo:pm.metodoStr, metodos:pm.metodos,
     clienteId:clienteId, clienteDoc:clienteDoc, clienteCiudad:clienteCiudad,
     montoUsd:montoUsd, montoBs:montoBs, tasa:tasa(), usuario:session().nombre });
   DB.set('pagos', pagos); confirmarControl(ctrl);
   if(clienteId){ cargarCargoCliente(clienteId, {concepto:concepto||'Cobro manual', montoUsd:montoUsd, metodo:pm.metodoStr}); }
-  logKardex('pago', {hab:0, huesped:clienteNom||concepto||'Cobro manual', clienteId:clienteId, detalle:'Cobro manual'+(clienteNom?(' · '+clienteNom):''), montoUsd:montoUsd, montoBs:montoBs, metodo:pm.metodoStr});
-  window._ultimoCobro = { pagoId:(pagos[0]&&pagos[0].id), ctrl:ctrl, habs:[], huesped:(clienteNom||concepto||'Cobro manual'), clienteId:clienteId, montoUsd:montoUsd, montoBs:montoBs, metodo:pm.metodoStr, cargoClienteId:clienteId,
-    lineas:[{txt:'Concepto: '+(concepto||'Cobro manual')},{txt:'Cliente: '+(clienteNom||'Sin cliente (cobro suelto)')},{txt:'Control N° '+fmtControl(ctrl)},{txt:'Forma de pago: '+pm.metodoStr},{txt:'Cobrado: '+fmtUSD(montoUsd)+' · '+fmtBs(montoBs), strong:true}],
-    titulo:'Cobro registrado', botonCerrar:'Aceptar', sub:'Cobro manual (no depende de una habitación).' };
+  logKardex('pago', {hab:0, huesped:clienteNom||concepto||'Cobro suelto', clienteId:clienteId, detalle:'Cobro'+(clienteNom?(' · '+clienteNom):' suelto'), montoUsd:montoUsd, montoBs:montoBs, metodo:pm.metodoStr});
+  window._ultimoCobro = { pagoId:(pagos[0]&&pagos[0].id), ctrl:ctrl, habs:[], huesped:(clienteNom||concepto||'Cobro suelto'), clienteId:clienteId, montoUsd:montoUsd, montoBs:montoBs, metodo:pm.metodoStr, cargoClienteId:clienteId,
+    lineas:[{txt:'Concepto: '+(concepto||'Cobro suelto')},{txt:'Cliente: '+(clienteNom||'Sin cliente (cobro suelto)')},{txt:'Control N° '+fmtControl(ctrl)},{txt:'Forma de pago: '+pm.metodoStr},{txt:'Cobrado: '+fmtUSD(montoUsd)+' · '+fmtBs(montoBs), strong:true}],
+    titulo:'Cobro registrado', botonCerrar:'Aceptar', sub:'Cobro suelto (no depende de una habitación).' };
   cerrarModal(); mostrarResultadoCobro(window._ultimoCobro);
 }
 function mostrarResultadoCobro(opts){
@@ -6459,7 +6459,7 @@ function borrarPago(id){
   let body='<button class="close" onclick="cerrarModal()">×</button><h2>Anular cobro</h2>';
   body+='<div style="background:#fdecea;border:1px solid #f3b4ac;border-radius:8px;padding:10px 12px;font-size:13px;color:#8a2a1c;margin-bottom:12px">Vas a <b>anular</b> este cobro. Queda registrado quién lo anula, cuándo y por qué, para poder revisarlo después.</div>';
   body+='<div style="background:#f3f6fb;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px">';
-  body+='<div><b>'+(p.hab?('Hab. '+p.hab):'Cobro manual')+'</b> '+esc(p.huesped||p.concepto||'')+'</div>';
+  body+='<div><b>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</b> '+esc(p.huesped||p.concepto||'')+'</div>';
   body+='<div style="color:#55637a;margin-top:3px">'+(p.control?('Control N° '+fmtControl(p.control)+' · '):'')+esc(p.metodo||'')+' · '+esc(p.fechaStr||'')+'</div>';
   body+='<div style="font-weight:800;color:var(--azul);margin-top:3px">'+fmtBs(p.montoBs)+' · '+fmtUSD(p.montoUsd)+'</div></div>';
   body+='<div class="field"><label>¿Por qué anulas este cobro? (obligatorio)</label><textarea id="anul-motivo" rows="3" placeholder="Ej: cobro duplicado, monto equivocado, el cliente no pagó, error de forma de pago…"></textarea></div>';
@@ -6565,11 +6565,11 @@ function imprimirCorte(turnoArg, _modo){
   const lMant=rs.filter(r=>r.estado==='mantenimiento').sort(porNum);
   // Tabla principal: habitaciones / cobros vendidos
   let filas=''; D.pagos.forEach(p=>{
-    filas+='<tr><td>'+(p.control?fmtControl(p.control):'—')+'</td><td>'+(p.hab?('Hab. '+p.hab):'Cobro manual')+'</td><td>'+esc(p.huesped||p.concepto||'—')+'</td><td>'+esc(p.usuario||'—')+'</td><td class="c">'+(p.noches?p.noches:'—')+'</td><td>'+esc(p.metodo||'')+'</td><td class="r">'+fmtBs(p.montoBs)+'</td><td class="r">'+fmtUSD(p.montoUsd)+'</td></tr>';
+    filas+='<tr><td>'+(p.control?fmtControl(p.control):'—')+'</td><td>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</td><td>'+esc(p.huesped||p.concepto||'—')+'</td><td>'+esc(p.usuario||'—')+'</td><td class="c">'+(p.noches?p.noches:'—')+'</td><td>'+esc(p.metodo||'')+'</td><td class="r">'+fmtBs(p.montoBs)+'</td><td class="r">'+fmtUSD(p.montoUsd)+'</td></tr>';
   });
   if(!filas) filas='<tr><td colspan="8" class="c" style="color:#888;padding:18px">No se vendió nada en esta fecha</td></tr>';
   // Cargos extra por habitación
-  let filasC=''; D.cargos.forEach(k=>{ filasC+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.control?fmtControl(k.control):'<span style="color:#b36b00">Pendiente de cobro</span>')+'</td><td>'+(k.hab?('Hab. '+k.hab):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td>'+esc(k.usuario||'—')+'</td></tr>'; });
+  let filasC=''; D.cargos.forEach(k=>{ const _ctrlCk=k.controlPago||k.control; filasC+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(_ctrlCk?fmtControl(_ctrlCk):'<span style="color:#b36b00">Pendiente de cobro</span>')+'</td><td>'+(k.hab?('Hab. '+k.hab):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td>'+esc(k.usuario||'—')+'</td></tr>'; });
   // Subtotales por recepcionista
   let filasR=''; Object.keys(D.porRecep).forEach(u=>{ const x=D.porRecep[u]; filasR+='<tr><td>'+esc(u)+'</td><td class="c">'+x.n+'</td><td class="r">'+fmtBs(x.bs)+'</td><td class="r">'+fmtUSD(x.usd)+'</td></tr>'; });
   // Anulaciones del día
@@ -7940,7 +7940,7 @@ function aplicarCargoComida(num, plan, noches){
     cargos.push({id:'cp'+Date.now(), tipo:'Comida', desc:planLabel(plan)+' · '+noches+' noche(s)', montoUsd:monto, restaurante:'', origen:'comidaPlan', fecha:new Date().toISOString(), pagado:false, control:null});
   }
   updateRoom(num,{plan:plan, cargos:cargos, comidaincTotal:monto, ocultarCobrar:false});
-  logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:'cp-plan', detalle:'Plan de comidas · '+planLabel(plan)+' · '+noches+' noche(s) · '+fmtUSD(monto)+' (mismo precio que se paga al restaurante)', cargoTipo:'Comida', cargoUsd:monto, cargoBs:precioBs(monto), comidasPlan:plan, noches:noches, montoUsd:0, montoBs:0, metodo:''});
+  logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:'cp-plan', control:siguienteControl(), detalle:'Plan de comidas · '+planLabel(plan)+' · '+noches+' noche(s) · '+fmtUSD(monto)+' (mismo precio que se paga al restaurante)', cargoTipo:'Comida', cargoUsd:monto, cargoBs:precioBs(monto), comidasPlan:plan, noches:noches, montoUsd:0, montoBs:0, metodo:''});
 }
 function comidasIncDelMes(ym){ return kardexAll().filter(function(k){ return k.tipo==='comidainc' && ymKey(k.ts)===ym; }).sort(function(a,b){ return new Date(a.ts)-new Date(b.ts); }); }
 var comidaMes = diaKey().slice(0,7);
