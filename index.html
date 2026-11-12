@@ -192,6 +192,16 @@ button{transition:transform .12s ease,box-shadow .16s ease,background .16s ease,
 .btn-orange{box-shadow:0 6px 16px rgba(232,135,30,.28);}
 .btn-green:hover,.btn-red:hover,.btn-orange:hover,.btn-gray:hover{transform:translateY(-2px);filter:brightness(1.07);}
 .login-card{border-radius:22px;box-shadow:0 24px 60px rgba(13,59,102,.25);border:1px solid rgba(255,255,255,.6);}
+/* ====== MARCA DEL HOTEL: colores que cambian con el tema ====== */
+:root{--fondo:#eef1f6;--topbarA:#0a2f52;--topbarB:#0d3b66;}
+body{background:var(--fondo) !important;background-attachment:fixed;}
+.topbar{background:linear-gradient(100deg,var(--topbarA) 0%,var(--topbarB) 45%,var(--azul2) 100%) !important;}
+.section-title::before{background:linear-gradient(180deg,var(--oro),var(--azul)) !important;}
+.stat .n{background:linear-gradient(90deg,var(--azul),var(--azul2)) !important;-webkit-background-clip:text !important;background-clip:text !important;}
+.tab.active{background:linear-gradient(90deg,var(--azul),var(--azul2)) !important;}
+button.btn-primary,.btn-primary{background:linear-gradient(95deg,var(--azul2),var(--azul)) !important;color:#fff;}
+button.btn-primary:hover,.btn-primary:hover{background:linear-gradient(95deg,var(--azul),var(--topbarA)) !important;}
+
 .modal{border-radius:22px;box-shadow:0 28px 70px rgba(13,30,55,.4);}
 input,select,textarea{border-radius:11px;transition:border-color .15s ease,box-shadow .15s ease;}
 input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-shadow:0 0 0 3px rgba(27,108,168,.18);}
@@ -465,7 +475,7 @@ const PERMISOS_CATALOGO=[
   ['verMantenimiento','Ver la pestaña de Mantenimiento','Muestra la pestaña “Mantenimiento” con los reportes de habitaciones en reparación y resueltos, y el botón para imprimir el reporte.'],
   ['cambiarHab','Cambiar al huésped de habitación','Permite mudar a un huésped a otra habitación (por un daño, porque lo pida o por sobreventa), dejando el rastro en la ficha y en el Kardex.'],
   ['verPolicial','Ver el Reporte policial de huéspedes','Muestra la pestaña “🚔 Reporte policial”, con el detalle de los huéspedes que entraron (para imprimir en la Epson LX-300 o bajar a Excel).'],
-  ['habAutorizada','Autorizar habitaciones del Sr. Carlos','En el check-in muestra la opción “Autorizada por el Sr. Carlos” para invitados, familia o trabajadores externos. Permite dejarla gratis, a mitad de precio o cobrar después (a crédito), anotando el nombre del invitado y el motivo. Todo queda en la auditoría y en el corte de turno.'],
+  ['habAutorizada','Autorizar habitaciones','En el check-in muestra la opción “Autorizada por… (el dueño o quien él indique)” para invitados, familia o trabajadores externos. Permite dejarla gratis, a mitad de precio o cobrar después (a crédito), anotando el nombre del invitado y el motivo. Todo queda en la auditoría y en el corte de turno.'],
   ['editarPreciosComida','Modificar los precios de las comidas incluidas','Le da la pestaña “Comidas incluidas” para cambiar el precio del desayuno, el almuerzo y la cena que el hotel le paga al restaurante por los huéspedes con plan de comidas.']
 ];
 const PERMISOS_CATALOGO_HK=[
@@ -880,12 +890,12 @@ function renderAdministracion(){
   let tabsTop='<div class="tabs-wrap"><div class="tabs">';
   tabsTop+='<div class="tab '+(admView==='bandeja'?'active':'')+'" onclick="admView=\'bandeja\';render()">📥 Bandeja</div>';
   if(cxcAdminOn()) tabsTop+='<div class="tab '+(admView==='cxc'?'active':'')+'" onclick="admView=\'cxc\';render()">💳 CXC</div>';
-  tabsTop+='<div class="tab '+(admView==='autorizadas'?'active':'')+'" onclick="admView=\'autorizadas\';render()">👑 Autorizadas</div>';
+  if(autorizadasOn()) tabsTop+='<div class="tab '+(admView==='autorizadas'?'active':'')+'" onclick="admView=\'autorizadas\';render()">👑 Autorizadas</div>';
   tabsTop+='<div class="tab '+(admView==='servicio'?'active':'')+'" onclick="admView=\'servicio\';render()">🍽️ Servicio a la habitación</div>';
   tabsTop+='<div class="tab '+(admView==='pagos'?'active':'')+'" onclick="admView=\'pagos\';render()">💳 Reporte de pagos</div>';
   tabsTop+='</div></div>';
   if(admView==='cxc'){ c.innerHTML = tabsTop + renderCxC(); return; }
-  if(admView==='autorizadas'){ c.innerHTML = tabsTop + renderAutorizadasAdmin(); return; }
+  if(admView==='autorizadas'){ if(!autorizadasOn()) admView='bandeja'; else { c.innerHTML = tabsTop + renderAutorizadasAdmin(); return; } }
   if(admView==='servicio'){ c.innerHTML = tabsTop + renderServicioAdmin(); return; }
   if(admView==='pagos'){ c.innerHTML = tabsTop + admRepHTML(); return; }
   let arr=DB.get('enviosAdmin',[])||[];
@@ -945,8 +955,8 @@ function renderAutorizadasAdmin(){
   const list=autorizadasDelMes(autMes);
   let gratis=0,mitad=0,credito=0, ahorro=0;
   list.forEach(k=>{ if(k.autModo==='gratis')gratis++; else if(k.autModo==='mitad')mitad++; else credito++; ahorro+=Math.max(0,(Number(k.autTarifaNormal||0)-Number(k.autTarifaCobra||0))*(Number(k.noches||1))); });
-  let h='<div class="section-title">👑 Habitaciones autorizadas por el Sr. Carlos</div>';
-  h+='<p style="font-size:13px;color:#8893a5;margin:0 0 14px;line-height:1.6">Reporte mensual de las habitaciones que Recepción marcó como <b>autorizadas por el Sr. Carlos</b> (invitados, familia o trabajadores externos). Elige el mes y puedes imprimirlo o bajarlo a Excel.</p>';
+  let h='<div class="section-title">👑 Habitaciones autorizadas por '+esc(autorizaTitulo())+'</div>';
+  h+='<p style="font-size:13px;color:#8893a5;margin:0 0 14px;line-height:1.6">Reporte mensual de las habitaciones que Recepción marcó como <b>autorizadas por '+esc(autorizaTitulo())+'</b> (invitados, familia o trabajadores externos). Elige el mes y puedes imprimirlo o bajarlo a Excel.</p>';
   h+='<div style="background:#f3f6fb;border:1px solid #d9e2f0;border-radius:12px;padding:14px 16px;margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">';
   h+='<div style="flex:1;min-width:170px"><label>Mes</label><input type="month" value="'+escA(autMes)+'" onchange="setAutMes(this.value)"></div>';
   h+='<button class="btn-primary" onclick="imprimirAutorizadas()">🖨️ Imprimir / PDF</button>';
@@ -956,7 +966,7 @@ function renderAutorizadasAdmin(){
   h+='<div class="stat" style="border-left-color:var(--naranja)"><div class="n">'+mitad+'</div><div class="l">Mitad de precio</div></div>';
   h+='<div class="stat" style="border-left-color:#b36b00"><div class="n">'+credito+'</div><div class="l">A crédito</div></div></div>';
   h+='<div style="font-size:13px;color:#55637a;margin:-6px 0 14px">Dejado de cobrar aprox. (cortesía + mitad): <b>'+fmtUSD(ahorro)+'</b> · '+fmtBs(precioBs(ahorro))+'</div>';
-  if(!list.length){ h+='<div class="empty-guia"><span class="ico">👑</span><div class="t">No hay habitaciones autorizadas en '+esc(mesLabel(autMes))+'</div><div class="s">Cuando Recepción marque una habitación como autorizada por el Sr. Carlos, aparecerá aquí.</div></div>'; return h; }
+  if(!list.length){ h+='<div class="empty-guia"><span class="ico">👑</span><div class="t">No hay habitaciones autorizadas en '+esc(mesLabel(autMes))+'</div><div class="s">Cuando Recepción marque una habitación como autorizada por '+esc(autorizaTitulo())+', aparecerá aquí.</div></div>'; return h; }
   h+='<div style="overflow-x:auto"><table class="users-table" style="margin:0"><tr><th>N° Control</th><th>Día</th><th>Hora</th><th>Turno</th><th>Hab.</th><th>Huésped</th><th>Invitado</th><th>Motivo</th><th>Cómo se cobra</th><th>Recepción</th><th>Tarifa normal</th><th>Se cobra</th></tr>';
   list.forEach(k=>{ h+='<tr><td>'+(k.control?fmtControl(k.control):'—')+'</td><td style="white-space:nowrap">'+esc(fechaDDMMYYYY(diaKey(new Date(k.ts))))+'</td><td>'+horaCorta(k.ts)+'</td><td style="font-size:12px">'+esc(turnoTxtTs(k.ts))+'</td><td>'+(k.hab||'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.autInvitado||'—')+'</td><td style="font-size:12px">'+esc(k.autMotivo||'—')+'</td><td style="font-size:12px">'+esc(k.autModo?autorizaModoTxt(k.autModo):(k.metodo||'—'))+'</td><td>'+esc(k.usuario||'—')+'</td><td>'+fmtUSD(k.autTarifaNormal||0)+'</td><td>'+fmtUSD(k.autTarifaCobra||0)+'</td></tr>'; });
   h+='</table></div>';
@@ -969,11 +979,11 @@ function imprimirAutorizadas(){
   let g=0,m=0,cr=0,ah=0; list.forEach(k=>{ if(k.autModo==='gratis')g++; else if(k.autModo==='mitad')m++; else cr++; ah+=Math.max(0,(Number(k.autTarifaNormal||0)-Number(k.autTarifaCobra||0))*(Number(k.noches||1))); });
   let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Autorizadas '+esc(mesLabel(autMes))+'</title>';
   html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}h1{font-size:20px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 16px}.cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}.card{flex:1;min-width:120px;border:1px solid #ccd;border-radius:8px;padding:10px 12px}.card .l{font-size:10.5px;color:#778;text-transform:uppercase}.card .n{font-size:18px;font-weight:800;color:#0d3b66}table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}th,td{border:1px solid #ccd;padding:5px 7px;text-align:left}th{background:#eef3fa;color:#44526a}.r{text-align:right}.c{text-align:center}.firmas{display:flex;gap:40px;margin-top:40px}.firma{flex:1;border-top:1px solid #333;padding-top:6px;font-size:12px;text-align:center;color:#555}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
-  html+='<h1>'+esc(hotelNombre())+' · 👑 Habitaciones autorizadas por el Sr. Carlos</h1>'+hotelLinePrint();
+  html+='<h1>'+esc(hotelNombre())+' · 👑 Habitaciones autorizadas por '+esc(autorizaTitulo())+'</h1>'+hotelLinePrint();
   html+='<div class="sub">Mes de <b>'+esc(mesLabel(autMes))+'</b> · Generado: '+new Date().toLocaleString('es-VE')+' · Tasa: '+fmtBs(tasa())+' / $1</div>';
   html+='<div class="cards"><div class="card"><div class="l">Autorizadas</div><div class="n">'+list.length+'</div></div><div class="card"><div class="l">Cortesía (gratis)</div><div class="n">'+g+'</div></div><div class="card"><div class="l">Mitad de precio</div><div class="n">'+m+'</div></div><div class="card"><div class="l">A crédito</div><div class="n">'+cr+'</div></div><div class="card"><div class="l">Dejado de cobrar (aprox.)</div><div class="n">'+fmtUSD(ah)+'</div></div></div>';
   html+='<table><tr><th>N° Control</th><th>Día</th><th>Hora</th><th>Turno</th><th>Hab.</th><th>Huésped</th><th>Invitado</th><th>Motivo</th><th>Cómo se cobra</th><th>Recepción</th><th class="r">Tarifa normal</th><th class="r">Se cobra</th></tr>'+filas+'</table>';
-  if(impConfig().mostrarFirmas) html+='<div class="firmas"><div class="firma">Revisado por<br>(Administración)</div><div class="firma">Autorizado por<br>(Sr. Carlos)</div></div>';
+  if(impConfig().mostrarFirmas) html+='<div class="firmas"><div class="firma">Revisado por<br>(Administración)</div><div class="firma">Autorizado por<br>(esc(autorizaTitulo()))</div></div>';
   html+=piePaginaHTML()+'</body></html>';
   return imprimirHTML(html);
 }
@@ -1106,7 +1116,7 @@ function renderDueno(){
   h+='<div class="stat" style="border-left-color:var(--verde)"><div class="n" style="font-size:20px">'+fmtUSD(ingMes.usd)+'</div><div class="l">Ingresos del mes (USD)</div></div>';
   h+='<div class="stat" style="border-left-color:var(--azul2)"><div class="n" style="font-size:20px">'+fmtBs(ingMes.bs)+'</div><div class="l">Ingresos del mes (Bs)</div></div>';
   h+='<div class="stat" style="border-left-color:var(--azul)"><div class="n">'+ingMes.n+'</div><div class="l">Cobros registrados</div></div>';
-  h+='<div class="stat" style="border-left-color:#7c3aed"><div class="n">'+auts.length+'</div><div class="l">Autorizadas por el Sr. Carlos</div></div></div>';
+  h+='<div class="stat" style="border-left-color:#7c3aed"><div class="n">'+auts.length+'</div><div class="l">Autorizadas por esc(autorizaTitulo())</div></div></div>';
   /* --- CXC --- */
   h+='<div class="section-title" style="font-size:15px">💳 Cuentas por cobrar (crédito)</div>';
   h+='<div class="stats">';
@@ -1125,7 +1135,7 @@ function renderDueno(){
   h+='</div></div></div>';
   /* --- Autorizaciones por tipo + lista con nombres --- */
   let g=0,m=0,cr=0; auts.forEach(k=>{ if(k.autModo==='gratis')g++; else if(k.autModo==='mitad')m++; else cr++; });
-  h+='<div class="section-title" style="font-size:15px">👑 Autorizaciones del Sr. Carlos — '+esc(mesLabel(duenoMes))+'</div>';
+  h+='<div class="section-title" style="font-size:15px">👑 Autorizaciones de '+esc(autorizaTitulo())+' — '+esc(mesLabel(duenoMes))+'</div>';
   h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:16px 18px;margin-bottom:16px">';
   if(!auts.length){ h+='<div style="color:#8893a5;font-size:13px">No hay habitaciones autorizadas en '+esc(mesLabel(duenoMes))+'.</div>'; }
   else{
@@ -1163,7 +1173,7 @@ function imprimirDueno(){
   html+='<h2>Hoy</h2><div class="cards">'+card('Ingresos hoy (USD)',fmtUSD(ingHoy.usd))+card('Ingresos hoy (Bs)',fmtBs(ingHoy.bs))+card('Ocupadas',oc.ocupadas)+card('Libres',oc.libres)+card('Ocupación',oc.pct+'%')+'</div>';
   html+='<h2>Mes de '+esc(mesLabel(duenoMes))+'</h2><div class="cards">'+card('Ingresos mes (USD)',fmtUSD(ingMes.usd))+card('Ingresos mes (Bs)',fmtBs(ingMes.bs))+card('Cobros',ingMes.n)+card('Autorizadas',auts.length)+'</div>';
   html+='<h2>Cuentas por cobrar</h2><div class="cards">'+card('Por cobrar',fmtUSD(cx.totPend)+' ('+cx.nPend+')')+card('Vencidas',fmtUSD(cx.venc)+' ('+cx.nVenc+')')+'</div>';
-  html+='<h2>👑 Autorizaciones del Sr. Carlos</h2><div class="cards">'+card('Cortesía (gratis)',g)+card('Mitad de precio',m)+card('A crédito',cr)+'</div>';
+  html+='<h2>👑 Autorizaciones de '+esc(autorizaTitulo())+'</h2><div class="cards">'+card('Cortesía (gratis)',g)+card('Mitad de precio',m)+card('A crédito',cr)+'</div>';
   if(auts.length){ html+='<table><tr><th>Día</th><th>Hab.</th><th>Invitado</th><th>Huésped</th><th>Cómo se cobra</th></tr>'; auts.forEach(k=>{ html+='<tr><td>'+esc(fechaDDMMYYYY(diaKey(new Date(k.ts))))+'</td><td>'+(k.hab||'—')+'</td><td>'+esc(k.autInvitado||'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.autModo?autorizaModoTxt(k.autModo):'—')+'</td></tr>'; }); html+='</table>'; }
   else html+='<p style="color:#888;font-size:12px">No hay habitaciones autorizadas en este mes.</p>';
   html+='<h2>📍 De dónde nos visitan</h2>';
@@ -1281,7 +1291,8 @@ function peekControl(){
   const cnt=parseInt(DB.get('pagoControl',0))||0; if(cnt>max) max=cnt;
   return max+1;
 }
-function siguienteControl(){ const next=peekControl(); DB.set('pagoControl', next); return next; }
+function siguienteControl(){ const next=peekControl(); DB.set('pagoControl', next); return next; }  /* reserva el numero (no se reutiliza si el cobro se cae) */  /* solo reserva el numero; se fija con confirmarControl() al guardar el cobro */
+function confirmarControl(ctrl){ /* el numero ya quedo reservado con siguienteControl(); nada que hacer */ }
 /* ---- Habitaciones de un control (incluye los tramos por cambio de habitación) ---- */
 function habsControlTexto(habs){
   var a=[];
@@ -2445,13 +2456,29 @@ function confirmarCheckinReserva(loc){
   modalEnvio({ titulo:'✅ Check-in listo', sub:'<b>'+esc(asign[0].nombreCompleto)+'</b> y su reserva quedaron en '+(_nums.length>1?('las habitaciones '+_nums.join(', ')):('la habitación '+_nums[0]))+'. Puedes enviarle un mensaje de bienvenida:', tel:r.telefono, correo:r.correo, asunto:'Bienvenido(a) a '+nombreHotelMsg(), mensaje:msgBienvenida(asign[0].nombreCompleto, _nums[0]) });
 }
 function cancelarReserva(loc){
-  if(!confirm('¿Cancelar la reserva '+loc+'? Quedará marcada como cancelada pero no se borra.')) return;
   const list=reservas(); const r=list.find(x=>x.loc===loc); if(!r) return;
-  r.estado='cancelada'; saveReservas(list); render();
+  if(!confirm('¿Cancelar la reserva '+loc+'? Quedará marcada como cancelada pero no se borra.'+reservaCanceladaMsg(r))) return;
+  if(!resDejaAnticipo(r)) return;
+  r.estado='cancelada'; r.canceladaEn=new Date().toISOString(); saveReservas(list); render();
+}
+function reservaCanceladaMsg(r){
+  if(!r) return '';
+  var ant=resAnticipoUsd(r);
+  if(!(ant>0.009)) return '';
+  return '\n\n⚠️ Ojo con el anticipo: se cobraron '+fmtUSD(ant)+' de esta reserva y ese dinero YA est\u00e1 en la caja del turno.\n\nSi le vas a devolver el dinero al cliente, primero registra la devoluci\u00f3n en Caja para que el arqueo cuadre (no lo borres de la lista de pagos).';
+}
+function resDejaAnticipo(r){
+  var ant=resAnticipoUsd(r); if(!(ant>0.009)) return false;
+  return confirm('Esta reserva tiene un anticipo cobrado de '+fmtUSD(ant)+' que ya est\u00e1 en la caja.\n\n¿Continuar de todas formas? (si devuelves el dinero, reg\u00edstralo en Caja)');
 }
 function eliminarReserva(loc){
-  if(!confirm('¿Eliminar definitivamente la reserva '+loc+'? Esta acción no se puede deshacer.')) return;
-  let list=reservas().filter(x=>x.loc!==loc); saveReservas(list); render();
+  const _r=reservas().find(x=>x.loc===loc);
+  if(!confirm('¿Eliminar definitivamente la reserva '+loc+'? Esta acción no se puede deshacer.'+reservaCanceladaMsg(_r))) return;
+  if(!resDejaAnticipo(_r)) return;
+  let list=reservas().filter(x=>x.loc!==loc);
+  saveReservas(list);
+  render();
+  try{ logKardex('reserva',{hab:0, huesped:((_r&&((_r.nombre||'')+' '+(_r.apellido||'')).trim())||'Huésped'), clienteId:'', detalle:'Reserva '+loc+' ELIMINADA'+(resAnticipoUsd(_r)>0.009?(' · tenía anticipo cobrado de '+fmtUSD(resAnticipoUsd(_r))+' (sigue registrado en la caja)'):''), montoUsd:0, montoBs:0, metodo:''}); }catch(_e){}
 }
 function resPagoEnReserva(r, concepto){
   if(!r) return 0;
@@ -2527,7 +2554,7 @@ function cobrarAnticipoConfirm(loc){
     metodos:[{metodo:metodo, montoUsd:totalUsd, montoBs:totalBs}],
     clienteId:'', clienteDoc:(r.docNum||''), clienteCiudad:'',
     montoUsd:totalUsd, montoBs:totalBs, tasa:tasa(), usuario:(s?s.nombre:'') });
-  DB.set('pagos', pagos);
+  DB.set('pagos', pagos); confirmarControl(ctrl);
   if(!Array.isArray(r.anticipos)) r.anticipos=[];
   r.anticipos.push({ts:now.toISOString(), montoUsd:totalUsd, montoBs:totalBs, metodo:metodo, nota:nota, control:ctrl, usuario:(s?s.nombre:'')});
   r.anticipoUsd=resAnticipoUsd(r);
@@ -2643,14 +2670,14 @@ function abrirHab(num){
       body += '<div id="m-multi-total"></div>';
     }
     body += desgloseBox(r.tarifa, 1, 'in');
-    if(puede('habAutorizada')){
+    if(puede('habAutorizada') && autorizadasOn()){
       body += '<div style="background:#f3eefb;border:1px solid #dccdf1;border-radius:12px;padding:12px 14px;margin:12px 0">';
-      body += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;color:#5b3a86;margin:0"><input type="checkbox" id="m-autoriza" style="width:auto;margin:0" onchange="toggleAutoriza('+num+')"> 👑 Autorizada por el Sr. Carlos</label>';
+      body += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;color:#5b3a86;margin:0"><input type="checkbox" id="m-autoriza" style="width:auto;margin:0" onchange="toggleAutoriza('+num+')"> 👑 Autorizada por '+esc(autorizaTexto())+'</label>';
       body += '<div style="font-size:12.5px;color:#6b5a86;margin-top:6px">Para invitados del jefe: amigos, familia o personas que vienen a trabajar al hotel.</div>';
       body += '<div id="m-autoriza-box" style="display:none;margin-top:10px">';
       body += '<div class="field"><label>¿Cómo se maneja el precio?</label><select id="m-autoriza-modo" onchange="recalcCheckin('+num+')"><option value="gratis">Gratis (cortesía, no se cobra)</option><option value="mitad">Mitad de precio</option><option value="credito">Cobrar después (a crédito)</option></select></div>';
       body += '<div class="field"><label>Nombre del invitado</label><input id="m-autoriza-invitado" placeholder="¿Para quién es?"></div>';
-      body += '<div class="field"><label>Motivo</label><select id="m-autoriza-motivo"><option value="Amigo del Sr. Carlos">Amigo del Sr. Carlos</option><option value="Familia del Sr. Carlos">Familia del Sr. Carlos</option><option value="Trabajador externo (viene a trabajar al hotel)">Trabajador externo</option><option value="Otro">Otro</option></select></div>';
+      body += '<div class="field"><label>Motivo</label><select id="m-autoriza-motivo"><option value="Amigo de escA(autorizaTexto())">Amigo de esc(autorizaTexto())</option><option value="Familia de escA(autorizaTexto())">Familia de esc(autorizaTexto())</option><option value="Trabajador externo (viene a trabajar al hotel)">Trabajador externo</option><option value="Otro">Otro</option></select></div>';
       body += '</div></div>';
     }
     body += '<div class="divider"></div><div class="actions">';
@@ -2662,7 +2689,7 @@ function abrirHab(num){
     if(r.nota) body += '<div class="field"><label>Nota</label><div style="margin-top:4px">'+esc(r.nota)+'</div></div>';
     if(r.autorizada){
       body += '<div style="background:#f3eefb;border:1px solid #dccdf1;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13px;color:#5b3a86">';
-      body += '👑 Esta habitación quedó marcada como <b>Autorizada por el Sr. Carlos</b> de un uso anterior. Si ya está desocupada, puedes quitarle la corona.';
+      body += '👑 Esta habitación quedó marcada como <b>Autorizada por '+esc(autorizaTexto())+'</b> de un uso anterior. Si ya está desocupada, puedes quitarle la corona.';
       body += '<div class="divider"></div><button class="btn-ghost" onclick="quitarCoronaHab('+num+')">👑 Quitar la corona</button></div>';
     }
     body += '<div class="divider"></div><div class="actions">';
@@ -3059,13 +3086,13 @@ function checkin(num){
   updateRoom(num,{estado:'ocupada', huesped:h, clienteId:clienteId||'', personas:adultos,
     ninos:ninos, acompanantes:acompanantes, menores:menores, promoId:promoId, promoTitulo:promoTit, promoDesc:promoDc,
     noches:noches, tarifa:tarifaEf, empresaRef:empRef, control:_ciCtrl,
-    autorizada:(_auth?true:false), autorizadaModo:(_auth?_auth.modo:''), autorizadaInvitado:(_auth?_auth.invitado:''), autorizadaMotivo:(_auth?_auth.motivo:''), autorizadaPor:(_auth?'Sr. Carlos':''), autorizadaTarifaNormal:(_auth?tarifa:0),
+    autorizada:(_auth?true:false), autorizadaModo:(_auth?_auth.modo:''), autorizadaInvitado:(_auth?_auth.invitado:''), autorizadaMotivo:(_auth?_auth.motivo:''), autorizadaPor:(_auth?autNombreLog():''), autorizadaTarifaNormal:(_auth?tarifa:0),
     checkin:new Date().toLocaleDateString('es-VE'), salida:document.getElementById('m-salida').value||''});
   logKardex('checkin', {hab:num, huesped:h, clienteId:clienteId||'', detalle:noches+' noche(s) · '+fmtUSD(tarifa)+'/noche'+(emp?(' · Empresa: '+(emp.nombre||empRef)):'')+extras, montoUsd:0, montoBs:0, metodo:''});
   if(_auth){
     const _modoTxt=autorizaModoTxt(_auth.modo);
     const _autCtrl=siguienteControl();
-    logKardex('autorizada', {hab:num, huesped:h, clienteId:clienteId||'', control:_autCtrl, detalle:'👑 Autorizada por el Sr. Carlos · '+_modoTxt+' · Invitado: '+(_auth.invitado||'—')+' · Motivo: '+(_auth.motivo||'—')+' · Tarifa normal '+fmtUSD(tarifa)+'/noche → cobra '+fmtUSD(tarifaEf)+'/noche · N° control '+fmtControl(_autCtrl), montoUsd:0, montoBs:0, metodo:_modoTxt, autModo:_auth.modo, autInvitado:(_auth.invitado||''), autMotivo:(_auth.motivo||''), autTarifaNormal:tarifa, autTarifaCobra:tarifaEf, noches:noches});
+    logKardex('autorizada', {hab:num, huesped:h, clienteId:clienteId||'', control:_autCtrl, detalle:'👑 Autorizada por '+autNombreLog()+' · '+_modoTxt+' · Invitado: '+(_auth.invitado||'—')+' · Motivo: '+(_auth.motivo||'—')+' · Tarifa normal '+fmtUSD(tarifa)+'/noche → cobra '+fmtUSD(tarifaEf)+'/noche · N° control '+fmtControl(_autCtrl), montoUsd:0, montoBs:0, metodo:_modoTxt, autModo:_auth.modo, autInvitado:(_auth.invitado||''), autMotivo:(_auth.motivo||''), autTarifaNormal:tarifa, autTarifaCobra:tarifaEf, noches:noches});
   }
   abrirEstadia(clienteId||'', num, noches, tarifaEf);
   // Plan de comidas incluido (lo paga el hotel al restaurante)
@@ -3129,7 +3156,7 @@ function checkin(num){
       if(!Array.isArray(_e.cargos)) _e.cargos=[];
       _e.cargos.push({ts:new Date().toISOString(), concepto:'Hospedaje Hab. '+num+' · '+noches+' noche(s) a '+fmtUSD(tarifaEf)+'/noche', montoUsd:_hospUsd, montoBs:precioBs(_hospUsd), control:_ctrlC, hab:num, usuario:(session()?session().nombre:'')});
       _e.montoUsd=Number(_e.montoUsd||0)+_hospUsd;
-      saveCxc(_ll);
+      saveCxc(_ll); confirmarControl(_ctrlC);
       updateRoom(num,{creditoCxc:true, creditoCxcId:_e.id, creditoCxcControl:_ctrlC});
       try{ logKardex('credito',{hab:num, huesped:h, clienteId:clienteId||'', control:_ctrlC, detalle:'Hospedaje Hab. '+num+' a crédito → CXC de '+(_e.nombre||'')+' · Control N° '+fmtControl(_ctrlC)+' · '+noches+' noche(s) · '+fmtUSD(_hospUsd), credUsd:_hospUsd, credBs:precioBs(_hospUsd), montoUsd:0, montoBs:0, metodo:'Crédito (CXC)'}); }catch(err){}
     }
@@ -3165,7 +3192,7 @@ function pintarDesglose(id, tarifa, noches, pct){
   document.getElementById('d-'+id+'-bs').innerText = fmtBs(precioBs(tot));
 }
 function fechaSalidaAuto(noches){ var d=new Date(); d.setDate(d.getDate()+(parseInt(noches)||1)); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-/* ---- Habitación autorizada por el Sr. Carlos ---- */
+/* ---- Habitación autorizada (por el dueño o quien él indique) ---- */
 function autorizaInfoCheckin(){
   const c=document.getElementById('m-autoriza');
   if(!c||!c.checked) return null;
@@ -3179,7 +3206,7 @@ function autorizaModoTxt(modo){ return modo==='gratis'?'Cortesía (gratis)':(mod
 function toggleAutoriza(num){ const b=document.getElementById('m-autoriza-box'); const c=document.getElementById('m-autoriza'); if(b) b.style.display=(c&&c.checked)?'block':'none'; recalcCheckin(num); }
 function autorizaBadgeHTML(r){
   return '<div style="background:#f3eefb;border:1px solid #dccdf1;border-radius:10px;padding:10px 12px;margin:8px 0;font-size:13px;color:#5b3a86">'+
-    '<b>👑 Autorizada por el Sr. Carlos</b> · '+esc(autorizaModoTxt(r.autorizadaModo))+
+    '<b>👑 Autorizada por '+esc(autorizaTexto())+'</b> · '+esc(autorizaModoTxt(r.autorizadaModo))+
     (r.autorizadaInvitado?('<div style="margin-top:3px">Invitado: <b>'+esc(r.autorizadaInvitado)+'</b></div>'):'')+
     (r.autorizadaMotivo?('<div>Motivo: '+esc(r.autorizadaMotivo)+'</div>'):'')+'</div>';
 }
@@ -3269,9 +3296,9 @@ function pedirCheckout(num){
   body += '<div style="display:flex;justify-content:space-between;font-weight:800;font-size:18px;margin-top:4px"><span>'+(abonoUsd>0?'Saldo a cobrar Bs':'Total Bs')+'</span><span>'+fmtBs(precioBs(saldoUsd))+'</span></div>';
   body += '<div style="text-align:center;font-size:11px;color:#8893a5;margin-top:8px">Tasa: '+fmtBs(tasa())+' / $1</div></div>';
   body += pmWidget('co');
-  body += '<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cobrarYCheckout('+num+')">Cobrar y hacer check-out</button>';
+  body += '<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cobrarYCheckout('+num+', this)">Cobrar y hacer check-out</button>';
   body += '<button class="btn-primary" onclick="imprimirRecibo('+num+')">Imprimir / PDF</button>';
-  body += '<button class="btn-red" onclick="checkoutSinCobro('+num+')">Check-out sin cobro</button>';
+  body += '<button class="btn-red" onclick="checkoutSinCobro('+num+', this)">Check-out sin cobro</button>';
   body += '<button onclick="cerrarModalPago()" class="btn-cancelar">✖ Volver</button></div>';
   showModal(body); pmReset('co', saldoUsd);
 }
@@ -3279,7 +3306,7 @@ function quitarCoronaHab(num){
   const r=findRoom(num); if(!r) return;
   if(r.estado==='ocupada'){ alert('Esta habitación está ocupada. La corona se quita sola al hacer el check-out.'); return; }
   limpiarAutorizacionHab(num);
-  logKardex('autorizada',{hab:num, huesped:'', detalle:'👑 Se quitó la marca de "Autorizada por el Sr. Carlos" (habitación desocupada)', montoUsd:0, montoBs:0, metodo:''});
+  logKardex('autorizada',{hab:num, huesped:'', detalle:'👑 Se quitó la marca de "Autorizada por '+autNombreLog()+'" (habitación desocupada)', montoUsd:0, montoBs:0, metodo:''});
   cerrarModal(); render();
   alert('Listo. Se le quitó la corona a la habitación '+num+'.');
 }
@@ -3289,15 +3316,19 @@ function confirmCheckout(num){
   updateRoom(num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, creditoCxc:false, creditoCxcId:'', creditoCxcControl:0, control:0, plan:'solo', planRest:{}, comidaincTotal:0, tramos:[], tramosCobro:undefined});
   cerrarModal(); render();
 }
-function checkoutSinCobro(num){
+function checkoutSinCobro(num, btn){
+  if(procesoDoble(btn)) return;
   const r = findRoom(num);
+  if(!r || r.estado!=='ocupada'){ procesoListo(btn); alert('Esa habitación ya no está ocupada (puede que su check-out ya se haya hecho).'); return; }
   logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Check-out sin cobro', montoUsd:0, montoBs:0, metodo:''});
   cerrarEstadia(r.clienteId||'', num, {montoUsd:0, metodo:'Sin cobro'});
   confirmCheckout(num);
 }
-function cobrarYCheckout(num){
+function cobrarYCheckout(num, btn){
   if(guardTurno()) return;
+  if(procesoDoble(btn)) return;
   const r = findRoom(num);
+  if(!r || r.estado!=='ocupada'){ procesoListo(btn); alert('Esa habitación ya no está ocupada (puede que su check-out ya se haya hecho).'); return; }
   const noches = nochesHab(r); const hosp = brutoHab(r);
   const enCxc = !!r.creditoCxc; const hospCobro = enCxc?0:hosp;
   const pend = cargosDe(r).filter(c=>!c.pagado);
@@ -3317,7 +3348,7 @@ function cobrarYCheckout(num){
     cerrarEstadia(r.clienteId||'', num, {noches:noches, montoUsd:0, metodo:(enCxc?'Hospedaje en CXC':'Pagado por adelantado')});
     confirmCheckout(num); return;
   }
-  const pm=pmLeer('co'); if(!pm.ok){ alert(pm.msg); return; }
+  const pm=pmLeer('co'); if(!pm.ok){ procesoListo(btn); alert(pm.msg); return; }
   const metodo = pm.metodoStr;
   const ctrl = (parseInt(r.control)||0) || siguienteControl();
   const pagos = DB.get('pagos',[]);
@@ -3325,7 +3356,7 @@ function cobrarYCheckout(num){
     hab:num, huesped:r.huesped||'', tipo:r.tipo||'', noches:noches, metodo:metodo, metodos:pm.metodos,
     clienteId:r.clienteId||'', clienteDoc:cr?cr.doc:'', clienteCiudad:cr?cr.ciudad:'',
     montoUsd:saldoUsd, montoBs:precioBs(saldoUsd), tasa:tasa(), usuario:session().nombre });
-  DB.set('pagos', pagos);
+  DB.set('pagos', pagos); confirmarControl(ctrl);
   ligarCargosControl(pend.map(c=>c.id), ctrl);
   const det = noches+' noche(s)'+(consUsd>0?' + consumos '+fmtUSD(consUsd):'')+' cobradas'+detAb;
   logKardex('checkout', {hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:det, montoUsd:saldoUsd, montoBs:precioBs(saldoUsd), metodo:metodo});
@@ -3361,7 +3392,8 @@ function guardarCargo(num){
   const restEl=document.getElementById('cg-rest'); const rest=(esComida&&restEl)?restEl.value:'';
   const r=findRoom(num); const cargos=cargosDe(r).slice();
   const _cgId='cg'+Date.now();
-  const _cgCtrl=siguienteControl();
+  const _cgCtrl=siguienteControl(); /* cada cargo del día lleva su propio N° de control (así estaban los recibos viejos) */
+  function _ligaCargosCtrl(_ids,_c){ if(!_ids||!_ids.length||!_c) return; const _l=cargosDe(findRoom(num)).map(function(x){ return _ids.indexOf(x.id)>=0?Object.assign({},x,{control:(x.control||_c),controlPago:_c}):x; }); updateRoom(num,{cargos:_l}); }
   cargos.push({id:_cgId, tipo:tipo, desc:desc, montoUsd:monto, restaurante:rest, fecha:new Date().toISOString(), pagado:false, control:_cgCtrl});
   updateRoom(num,{cargos:cargos, ocultarCobrar:false});
   logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:_cgId, control:_cgCtrl, detalle:tipo+(rest?(' · '+rest):'')+(desc?' · '+desc:'')+' · '+fmtUSD(monto)+' · N° control '+fmtControl(_cgCtrl), restaurante:rest, cargoTipo:tipo, cargoUsd:monto, cargoBs:precioBs(monto), montoUsd:0, montoBs:0, metodo:''});
@@ -3397,7 +3429,47 @@ function cobrarSinCheckoutModal(num){
   body+='<div class="field"><label>Monto (USD)</label><input id="cob-otro" type="number" min="0" step="0.01" value="0" oninput="cobCalc()"></div>';
   body+=pmWidget('cob');
   body+='<div style="background:#f3f6fb;border-radius:10px;padding:14px;margin-top:4px"><div style="display:flex;justify-content:space-between;font-weight:800;color:var(--azul);font-size:16px"><span>Total a cobrar</span><span id="cob-usd">'+fmtUSD(0)+'</span></div><div style="display:flex;justify-content:space-between;font-weight:800;font-size:16px;margin-top:4px"><span>En Bs</span><span id="cob-bs">'+fmtBs(0)+'</span></div></div>';
-  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cobrarSinCheckout('+num+')">Cobrar ahora</button><button onclick="cerrarModalPago()" class="btn-cancelar">✖ Cancelar</button></div>';
+  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cobrarSinCheckout('+num+', this)">Cobrar ahora</button><button onclick="cerrarModalPago()" class="btn-cancelar">✖ Cancelar</button></div>';
+  showModal(body); pmReset('cob', 0); cobCalc();
+}
+function cobCalc(){
+  let t=0; document.querySelectorAll('.cob-chk').forEach(ch=>{ if(ch.checked) t+=Number(ch.getAttribute('data-m'))||0; });
+  const otroEl=document.getElementById('cob-otro'); t+=(otroEl?parseFloat(otroEl.value)||0:0);
+  const u=document.getElementById('cob-usd'), b=document.getElementById('cob-bs');
+  if(u) u.innerText=fmtUSD(t); if(b) b.innerText=fmtBs(precioBs(t));
+  pmSyncSingle('cob', t);
+}
+function ligarCargosControl(ids, ctrl){
+  if(!ids||!ids.length||!ctrl) return;
+  const k=kardexAll(); let ch=false;
+  k.forEach(m=>{ if(m.tipo==='cargo' && m.cargoId && ids.indexOf(m.cargoId)>=0){ if(!m.control){ m.control=ctrl; ch=true; } else if(!m.controlPago){ m.controlPago=ctrl; ch=true; } } });
+  if(ch) DB.set('kardex', k);
+}
+function quitarCargo(num,id){
+  const r=findRoom(num); const cargos=cargosDe(r);
+  const cg=cargos.find(x=>x.id===id); if(!cg) return;
+  if(cg.pagado){ alert('Ese consumo ya fue cobrado, no se puede quitar.'); return; }
+  if(!confirm('¿Quitar este consumo de la cuenta?')) return;
+  updateRoom(num,{cargos:cargos.filter(x=>x.id!==id)}); abrirHab(num);
+}
+function cobrarSinCheckoutModal(num){
+  if(guardTurno()) return;
+  const r=findRoom(num); const pend=cargosDe(r).filter(c=>!c.pagado);
+  let body='<button class="close" onclick="abrirHab('+num+')">×</button>';
+  body+='<h2>Cobrar sin check-out · Hab. '+num+'</h2>';
+  body+='<div class="rstate" style="color:#55637a">La habitación seguirá ocupada</div>';
+  if(pend.length){
+    body+='<div class="section-title" style="font-size:14px;margin-top:6px">Consumos pendientes</div>';
+    pend.forEach(c=>{ body+='<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:6px;cursor:pointer"><input type="checkbox" class="cob-chk" value="'+c.id+'" data-m="'+Number(c.montoUsd||0)+'" checked onchange="cobCalc()" style="width:auto;margin:0"> '+esc(c.tipo+(c.desc?' · '+c.desc:''))+' — <b>'+fmtUSD(c.montoUsd)+'</b></label>'; });
+  } else {
+    body+='<div style="color:#8893a5;font-size:13px;margin:6px 0">No hay consumos pendientes. Puedes cobrar un adelanto o un concepto libre abajo.</div>';
+  }
+  body+='<div class="divider"></div><div class="section-title" style="font-size:14px">Otro cobro (opcional)</div>';
+  body+='<div class="field"><label>Concepto</label><input id="cob-concepto" placeholder="ej: adelanto de hospedaje"></div>';
+  body+='<div class="field"><label>Monto (USD)</label><input id="cob-otro" type="number" min="0" step="0.01" value="0" oninput="cobCalc()"></div>';
+  body+=pmWidget('cob');
+  body+='<div style="background:#f3f6fb;border-radius:10px;padding:14px;margin-top:4px"><div style="display:flex;justify-content:space-between;font-weight:800;color:var(--azul);font-size:16px"><span>Total a cobrar</span><span id="cob-usd">'+fmtUSD(0)+'</span></div><div style="display:flex;justify-content:space-between;font-weight:800;font-size:16px;margin-top:4px"><span>En Bs</span><span id="cob-bs">'+fmtBs(0)+'</span></div></div>';
+  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cobrarSinCheckout('+num+', this)">Cobrar ahora</button><button onclick="cerrarModalPago()" class="btn-cancelar">✖ Cancelar</button></div>';
   showModal(body); pmReset('cob', 0); cobCalc();
 }
 function cobCalc(){
@@ -3425,7 +3497,7 @@ function cobrarSinCheckout(num){
     hab:num, huesped:r.huesped||'', tipo:r.tipo||'', noches:0, metodo:metodo, metodos:pm.metodos,
     concepto:'Consumos / cobro en habitación', clienteId:r.clienteId||'', clienteDoc:cr?cr.doc:'', clienteCiudad:cr?cr.ciudad:'',
     montoUsd:tot, montoBs:precioBs(tot), tasa:tasa(), usuario:session().nombre });
-  DB.set('pagos',pagos);
+  DB.set('pagos',pagos); confirmarControl(ctrl);
   ligarCargosControl(ids, ctrl);
   const cargos=cargosDe(r).map(cg=> ids.includes(cg.id)?Object.assign({},cg,{pagado:true,control:(cg.control||ctrl),controlPago:ctrl}):cg);
   const patch={cargos:cargos, control:ctrl};
@@ -3542,6 +3614,13 @@ function confirmarCambioHab(origen){
   alert('Huésped mudado de la habitación '+origen+' a la '+destinoNum+'.');
 }
 function hotelNombre(){ const h=hotel(); return h.nombre||'Comprobante de Hospedaje'; }
+/* ---- Quién autoriza (se configura en Marca del Hotel) ---- */
+function autorizaNombre(){ const h=hotel(); const n=(h.autorizaNombre||'').trim(); return n||'el dueño'; }
+function autorizaCargo(){ const h=hotel(); return (h.autorizaCargo||'').trim(); }
+function autorizaTitulo(){ const c=autorizaCargo(); const n=autorizaNombre(); return c?(c+' '+n):n; }
+function autorizaTexto(){ const c=autorizaCargo(); const n=autorizaNombre(); return c?('el '+c.toLowerCase()+' '+n):n; }
+function autorizadasOn(){ const h=hotel(); return h.autorizadasOn===undefined?true:!!h.autorizadasOn; }
+function autNombreLog(){ const h=hotel(); const n=(h.autorizaNombre||'').trim(); return n?((h.autorizaCargo?h.autorizaCargo+' ':'')+n):'el dueño'; }
 /* ---- Configuración de impresión (la decide el Master) ---- */
 function impConfigDefault(){ return {mostrarLogo:true, mostrarRif:true, mostrarDireccion:true, mostrarEslogan:false, piePagina:'', notaRecibo:'', mostrarFirmas:true, colPiso:true, colTipo:true, colTarifa:true, colEstado:true, escalaImpresion:1, titulos:{}}; }
 function impConfig(){ return Object.assign(impConfigDefault(), DB.get('impresion',{})||{}); }
@@ -4735,7 +4814,7 @@ function renderAdmin(){
   if(adminTab==='cxc' && !cxcAdminOn()) adminTab='resumen';
   let html = '<div class="section-title">Panel de Administración</div>';
   html += '<div class="tabs-wrap"><div class="tabs">'+
-    tabBtn('tablero','📋 Tablero del día')+tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+(cxcAdminOn()?tabBtn('cxc','💳 CXC'):'')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','🔎 Buscar reportes de pago')+tabBtn('promociones','Promociones')+tabBtn('restaurantes','🍽️ Restaurantes')+tabBtn('turnosrecep','🕐 Turnos recepción')+tabBtn('comidas','🍳 Comidas incluidas')+tabBtn('salones','🏛️ Salones')+tabBtn('mantenimiento','Mantenimiento')+tabBtn('policial','🚔 Reporte policial')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div></div>';
+    tabBtn('tablero','📋 Tablero del día')+tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+(cxcAdminOn()?tabBtn('cxc','💳 CXC'):'')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','🔎 Buscar reportes de pago')+tabBtn('promociones','Promociones')+tabBtn('restaurantes','🍽️ Restaurantes')+tabBtn('turnosrecep','🕐 Turnos recepción')+tabBtn('comidas','🍳 Comidas incluidas')+tabBtn('salones','🏛️ Salones')+tabBtn('mantenimiento','Mantenimiento')+tabBtn('policial','🚔 Reporte policial')+tabBtn('marca','🏨 Marca del Hotel')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div></div>';
   if(adminTab==='tablero'){ c.innerHTML = html + renderTablero(); return; }
   if(adminTab==='cxc'){ c.innerHTML = html + renderCxC(); return; }
   if(adminTab==='resumen'){
@@ -4764,6 +4843,8 @@ function renderAdmin(){
     adminTab='resumen'; html += '<div style="background:#f3f6fb;border:1px solid #dde4ee;border-radius:10px;padding:14px 16px;margin-bottom:14px;font-size:13.5px;color:#44526a;line-height:1.6">💡 Las <b>reservas</b> las hace <b>Recepción</b>. El Master no vende ni reserva.</div>';
   } else if(adminTab==='kardex'){
     html += renderKardex();
+  } else if(adminTab==='marca'){
+    html += renderMarca();
   } else if(adminTab==='hotel'){
     html += renderIdentidad();
   } else if(adminTab==='impresion'){
@@ -5935,28 +6016,30 @@ function cobrarCuentaModal(numsStr){
   body+='<div style="display:flex;justify-content:space-between;font-weight:800;font-size:18px;margin-top:4px"><span>Total Bs</span><span>'+fmtBs(precioBs(g.saldo))+'</span></div>';
   body+='<div style="text-align:center;font-size:11px;color:#8893a5;margin-top:8px">Tasa: '+fmtBs(tasa())+' / $1</div></div>';
   body+=pmWidget('grp');
-  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cobrarCuentaConfirm(\''+g.nums.join(',')+'\')">Registrar pago</button>';
+  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cobrarCuentaConfirm(\''+g.nums.join(',')+'\', this)">Registrar pago</button>';
   body+='<button class="btn-orange" onclick="enviarACxCModal(\''+g.nums.join(',')+'\')">📋 Enviar a CXC</button>';
   body+='<button class="btn-primary" onclick="imprimirReciboGrupo(\''+g.nums.join(',')+'\')">Imprimir / PDF</button>';
   body+='<button onclick="cerrarModalPago()" class="btn-cancelar">✖ Cancelar</button></div>';
   showModal(body); pmReset('grp', g.saldo);
 }
-function cobrarCuentaConfirm(numsStr){
+function cobrarCuentaConfirm(numsStr, btn){
   if(guardTurno()) return;
-  const g=cobroGrupoDatos(numsStr); if(!g.list.length){ alert('No hay habitaciones para cobrar.'); return; }
-  if(g.saldo<=0.009){ alert('Esta cuenta ya está totalmente pagada.'); return; }
+  if(procesoDoble(btn)) return;
+  const g=cobroGrupoDatos(numsStr); if(!g.list.length){ procesoListo(btn); alert('No hay habitaciones para cobrar.'); return; }
+  if(g.saldo<=0.009){ procesoListo(btn); alert('Esta cuenta ya está totalmente pagada.'); return; }
   const r0=g.list[0]; const c=g.titu||clienteDeHab(r0); const cr=c?clienteResumen(c):null; const now=new Date();
   const _hNom=g.tituNombre||r0.huesped||''; const _hCid=g.tituId||r0.clienteId||'';
   if(PM_STATE['grp']) PM_STATE['grp'].total=g.saldo;
-  const pm=pmLeer('grp'); if(!pm.ok){ alert(pm.msg); return; }
+  const pm=pmLeer('grp'); if(!pm.ok){ procesoListo(btn); alert(pm.msg); return; }
   const metodo=pm.metodoStr; const ctrl=controlDeGrupo(g.list)||siguienteControl(); const multi=g.list.length>1; const pagos=DB.get('pagos',[]);
   const _habsCtrl=habsDeControlGroup(g.list); const _habsCtrlTxt=habsControlTexto(_habsCtrl); const _conTramos=_habsCtrl.length>g.list.length;
   pagos.unshift({ id:Date.now(), control:ctrl, dia:diaKey(now), fechaStr:now.toLocaleString('es-VE'),
     hab:(_conTramos?_habsCtrlTxt:g.nums.join(', ')), habsTramo:(_conTramos?_habsCtrl:null), huesped:_hNom, tipo:multi?'Varias habitaciones':(r0.tipo||''), noches:g.nochesTot, metodo:metodo, metodos:pm.metodos,
     concepto:(multi?('Cobro combinado ('+g.nums.length+' habitaciones)'):'Cobro de hospedaje')+(_conTramos?(' · Hab. '+_habsCtrlTxt):''), clienteId:_hCid, clienteDoc:cr?cr.doc:'', clienteCiudad:cr?cr.ciudad:'',
     montoUsd:g.saldo, montoBs:precioBs(g.saldo), tasa:tasa(), usuario:session().nombre });
-  DB.set('pagos', pagos);
+  DB.set('pagos', pagos); confirmarControl(ctrl);
   logKardex('pago',{hab:(_conTramos?_habsCtrlTxt:g.nums.join(', ')), huesped:_hNom, clienteId:_hCid, detalle:(multi?('Cobro combinado · '+g.nums.length+' habitaciones'):'Cobro de hospedaje')+' (sin salida)'+(_conTramos?(' · incluye tramos de Hab. '+_habsCtrlTxt+' · Control N° '+fmtControl(ctrl)):''), montoUsd:g.saldo, montoBs:precioBs(g.saldo), metodo:metodo});
+  if(g.saldo<=0.009){ procesoListo(btn); alert('Esta cuenta ya está totalmente pagada.'); return; }
   g.porHab.forEach(x=>{ const r=x.r; const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r);
     const abPrev=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+Number(a.montoUsd||0),0);
     const pendIds=cargosDe(r).filter(cg=>!cg.pagado).map(cg=>cg.id);
@@ -6094,7 +6177,7 @@ function extenderEstadiaModal(num){
   body+='<div class="field"><label>¿Cuántas noches más quieres agregar?</label><input id="ext-n" type="number" min="1" value="1" oninput="extPrev('+num+')"></div>';
   body+='<div id="ext-prev" style="background:#f3f6fb;border-radius:10px;padding:14px;font-size:14px;color:#44526a"></div>';
   body+='<div style="font-size:12.5px;color:#8893a5;margin-top:8px">Se suman las noches a la cuenta con la misma tarifa. El nuevo monto aparece automáticamente en "Cobrar".</div>';
-  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="extenderEstadiaConfirm('+num+')">Agregar noches a la cuenta</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="extenderEstadiaConfirm('+num+', this)">Agregar noches a la cuenta</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
   showModal(body); extPrev(num);
 }
 function extPrev(num){
@@ -6103,7 +6186,8 @@ function extPrev(num){
   const nuevaSal=(r.salida?sumarDiasISO(r.salida,Math.max(0,add)):fechaSalidaAuto(nuevas))||fechaSalidaAuto(nuevas);
   e.innerHTML='<div style="display:flex;justify-content:space-between"><span>Noches después</span><b>'+nuevas+'</b></div><div style="display:flex;justify-content:space-between;margin-top:4px"><span>Nueva fecha de salida</span><b>'+fechaDDMMYYYY(nuevaSal)+'</b></div><div style="display:flex;justify-content:space-between;margin-top:4px"><span>Se suma a la cuenta</span><b>'+fmtUSD(extra)+' · '+fmtBs(precioBs(extra))+'</b></div>';
 }
-function extenderEstadiaConfirm(num){
+function extenderEstadiaConfirm(num, btn){
+  if(procesoDoble(btn)) return;
   const r=findRoom(num); if(!r||r.estado!=='ocupada'){ alert('Esa habitación no está ocupada.'); return; }
   const add=parseInt(document.getElementById('ext-n').value)||0;
   if(add<=0){ alert('Escribe cuántas noches agregar (1 o más).'); return; }
@@ -6282,7 +6366,7 @@ function pagoManualModal(){
   body += '<div style="display:flex;gap:10px"><div class="field" style="flex:2"><label>Monto total</label><input id="pm-monto" type="number" min="0" step="0.01" oninput="pmCalcManual()"></div>';
   body += '<div class="field" style="flex:1"><label>Moneda</label><select id="pm-moneda" onchange="pmCalcManual()"><option value="Bs">Bs</option><option value="USD">USD</option></select></div></div>';
   body += '<div id="pm-pago-box">'+pmWidget('pm')+'</div>';
-  body += '<div class="divider"></div><div class="actions"><button class="btn-green" id="pm-guardar" onclick="guardarPagoManual()">Guardar cobro</button><button onclick="cerrarModalPago()" class="btn-cancelar">✖ Cancelar</button></div>';
+  body += '<div class="divider"></div><div class="actions"><button class="btn-green" id="pm-guardar" onclick="guardarPagoManual(this)">Guardar cobro</button><button onclick="cerrarModalPago()" class="btn-cancelar">✖ Cancelar</button></div>';
   showModal(body); pmReset('pm', 0); pmCalcManual(); pmDestinoCambio();
 }
 function pmDestinoCambio(){
@@ -6298,8 +6382,9 @@ function pmCalcManual(){
   const usd = moneda==='USD'? monto : (monto/tasa());
   pmSyncSingle('pm', usd);
 }
-function guardarPagoManual(){
+function guardarPagoManual(btn){
   if(guardTurno()) return;
+  if(procesoDoble(btn)) return;
   const concepto = document.getElementById('pm-concepto').value.trim();
   const monto = parseFloat(document.getElementById('pm-monto').value)||0;
   const moneda = document.getElementById('pm-moneda').value;
@@ -6317,7 +6402,7 @@ function guardarPagoManual(){
       tipo:(cc.tipo==='empresa'?'empresa':'huesped'), nombre:cr.nom||'Cliente', docRef:cr.doc||'', telefono:cc.telefono||'',
       concepto:concepto||'Cargo agregado a la cuenta', hab:'', montoUsd:totalUsd, fecha:hoyISO(), vencimiento:'', notas:'',
       abonos:[], creadoPor:(ss?ss.nombre:''), origen:'caja-manual', clienteId:cId });
-    saveCxc(l);
+    saveCxc(l); confirmarControl(ctrl2);
     logKardex('credito', {hab:0, huesped:cr.nom||'Cliente', clienteId:cId, control:ctrl2, detalle:'Agregado a CXC · Control N° '+fmtControl(ctrl2)+' · '+(concepto||'Cargo'), montoUsd:totalUsd, montoBs:precioBs(totalUsd), metodo:'Por cobrar (CXC)'});
     cerrarModal(); render();
     alert('Agregado a CXC.\nCliente: '+(cr.nom||'Cliente')+'\nControl N° '+fmtControl(ctrl2)+'\nMonto: '+fmtUSD(totalUsd));
@@ -6336,7 +6421,7 @@ function guardarPagoManual(){
     hab:0, huesped:clienteNom, concepto:concepto||'Cobro manual', metodo:pm.metodoStr, metodos:pm.metodos,
     clienteId:clienteId, clienteDoc:clienteDoc, clienteCiudad:clienteCiudad,
     montoUsd:montoUsd, montoBs:montoBs, tasa:tasa(), usuario:session().nombre });
-  DB.set('pagos', pagos);
+  DB.set('pagos', pagos); confirmarControl(ctrl);
   if(clienteId){ cargarCargoCliente(clienteId, {concepto:concepto||'Cobro manual', montoUsd:montoUsd, metodo:pm.metodoStr}); }
   logKardex('pago', {hab:0, huesped:clienteNom||concepto||'Cobro manual', clienteId:clienteId, detalle:'Cobro manual'+(clienteNom?(' · '+clienteNom):''), montoUsd:montoUsd, montoBs:montoBs, metodo:pm.metodoStr});
   window._ultimoCobro = { pagoId:(pagos[0]&&pagos[0].id), ctrl:ctrl, habs:[], huesped:(clienteNom||concepto||'Cobro manual'), clienteId:clienteId, montoUsd:montoUsd, montoBs:montoBs, metodo:pm.metodoStr, cargoClienteId:clienteId,
@@ -6378,10 +6463,11 @@ function borrarPago(id){
   body+='<div style="color:#55637a;margin-top:3px">'+(p.control?('Control N° '+fmtControl(p.control)+' · '):'')+esc(p.metodo||'')+' · '+esc(p.fechaStr||'')+'</div>';
   body+='<div style="font-weight:800;color:var(--azul);margin-top:3px">'+fmtBs(p.montoBs)+' · '+fmtUSD(p.montoUsd)+'</div></div>';
   body+='<div class="field"><label>¿Por qué anulas este cobro? (obligatorio)</label><textarea id="anul-motivo" rows="3" placeholder="Ej: cobro duplicado, monto equivocado, el cliente no pagó, error de forma de pago…"></textarea></div>';
-  body+='<div class="divider"></div><div class="actions"><button class="btn-red" onclick="confirmarAnularPago('+id+')">Anular cobro</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  body+='<div class="divider"></div><div class="actions"><button class="btn-red" onclick="confirmarAnularPago('+id+', this)">Anular cobro</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
   showModal(body);
 }
-function confirmarAnularPago(id){
+function confirmarAnularPago(id, btn){
+  if(procesoDoble(btn)) return;
   if(!(session().rol==='admin'||puedeSup('anularPagos'))){ alert('No tienes permiso para anular cobros.'); cerrarModal(); return; }
   const pagos=DB.get('pagos',[]); const p=pagos.find(x=>x.id===id);
   if(!p){ alert('No se encontró el cobro.'); cerrarModal(); return; }
@@ -6529,7 +6615,7 @@ function imprimirCorte(turnoArg, _modo){
   if(filasC){ html+='<h2>Cargos extra por habitación</h2><table><tr><th>Hora</th><th>N° Control</th><th>Habitación</th><th>Huésped</th><th>Detalle del cargo</th><th>Registrado por</th></tr>'+filasC+'</table>'; }
   if(filasA){ html+='<h2>Cobros anulados en el día</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Motivo</th><th>Anulado por</th><th class="r">Bs</th></tr>'+filasA+'</table>'; }
   if(filasCred){ html+='<h2>CXC generadas (ventas a crédito)</h2><table><tr><th>N° Control</th><th>Hora</th><th>Habitación</th><th>Cliente</th><th>Detalle</th><th>Registrado por</th><th class="r">Bs</th><th class="r">USD</th></tr>'+filasCred+'<tr class="tot"><td colspan="6">TOTAL A CRÉDITO (POR COBRAR)</td><td class="r">'+fmtBs(D.credBs)+'</td><td class="r">'+fmtUSD(D.credUsd)+'</td></tr></table>'; }
-  if(filasAut){ html+='<h2>👑 Habitaciones autorizadas por el Sr. Carlos</h2><table><tr><th>N° Control</th><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Invitado</th><th>Motivo</th><th>Cómo se cobra</th><th>Autorizado por (recepción)</th><th class="r">Tarifa normal</th><th class="r">Se cobra</th></tr>'+filasAut+'</table>'; }
+  if(filasAut){ html+='<h2>👑 Habitaciones autorizadas por '+esc(autorizaTitulo())+'</h2><table><tr><th>N° Control</th><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Invitado</th><th>Motivo</th><th>Cómo se cobra</th><th>Autorizado por (recepción)</th><th class="r">Tarifa normal</th><th class="r">Se cobra</th></tr>'+filasAut+'</table>'; }
   if((D.listaMan||[]).length){ html+='<h2>🧹 Habitaciones marcadas listas a mano (sin pasar por Ama de Llaves)</h2><table><tr><th>Hora</th><th>Habitación</th><th>Marcada por</th><th>Motivo (nota)</th></tr>'+filasLisM+'</table>'; }
   if((D.hkRep||[]).length){ html+='<h2>🧹 Habitaciones que Ama de Llaves encontró usadas (nadie las había reportado)</h2><table><tr><th>Hora</th><th>Habitación</th><th>Reportó</th><th>Lo que encontró (nota)</th></tr>'+filasHKRep+'</table>'; }
   html+=estadoHtml;
@@ -6805,7 +6891,7 @@ function cxcCargarHospedajeEmpresa(emp, num, tarifaEf, noches, huesped, clienteI
         creadoPor:(s?s.nombre:''), origen:'checkin-empresa' };
     l.unshift(e);
   }
-  saveCxc(l);
+  saveCxc(l); confirmarControl(ctrl);
   updateRoom(num,{creditoCxc:true, creditoCxcId:e.id, creditoCxcControl:ctrl});
   try{ logKardex('credito',{hab:num, huesped:huesped, clienteId:clienteIdPersona||'', control:ctrl, detalle:'Hospedaje Hab. '+num+' a crédito → CXC de EMPRESA '+(emp.nombre||'')+' · Control N° '+fmtControl(ctrl)+' · '+(noches||1)+' noche(s) · '+fmtUSD(hospUsd), credUsd:hospUsd, credBs:precioBs(hospUsd), montoUsd:0, montoBs:0, metodo:'Crédito empresa (CXC)'}); }catch(err){}
   return e;
@@ -6990,7 +7076,7 @@ function cxcGuardar(){
   };
   const l=cxc();
   if(cxcEdit){ const i=l.findIndex(x=>x.id===cxcEdit); if(i>=0){ l[i]=Object.assign(l[i],datos); } }
-  else{ const s=session(); l.unshift(Object.assign({id:'cx'+Date.now()+Math.random().toString(36).slice(2,5), abonos:[], control:siguienteControl(), creadoPor:(s?s.nombre:'')}, datos)); }
+  else{ const s=session(); l.unshift(Object.assign({id:'cx'+Date.now()+Math.random().toString(36).slice(2,5), abonos:[], control:siguienteControl(), creadoPor:(s?s.nombre:'')}, datos)); const _nc=l[0].control; saveCxc(l); confirmarControl(_nc); cxcEdit=null; cerrarModal(); render(); return; }
   saveCxc(l); cxcEdit=null; cerrarModal(); render();
 }
 function cxcAbonarModal(id){
@@ -7943,6 +8029,11 @@ function turnoDeOtro(){
   const s=session(); if(!s) return null; const a=turnoActivo(); if(!a) return null;
   return (a.usuario && a.usuario!==s.user)? a : null;
 }
+/* Evita que un doble clic repita el mismo cobro / proceso. */
+function procesoDoble(btn){ try{ if(btn && btn.disabled){ return true; } if(btn){ btn.disabled=true; } }catch(e){} return false; }
+function procesoListo(btn){ try{ if(btn) btn.disabled=false; }catch(e){} }
+function btnEvento(){ try{ return (typeof event!=='undefined' && event && event.currentTarget) ? event.currentTarget : null; }catch(e){ return null; } }
+function procesoReset(id){ try{ var b=document.getElementById(id); if(b) b.disabled=false; }catch(e){} }
 function guardTurno(){
   const s=session(); const o=turnoDeOtro();
   if(o && s && s.rol==='recepcion'){ alert('Cobros y ventas bloqueados. El turno esta abierto a nombre de '+(o.nombre||'otro usuario')+' desde '+fechaHoraCorta(o.inicio)+'. Pide que cierre su turno para poder cobrar o vender.'); return true; }
@@ -8012,7 +8103,7 @@ function duracionTurno(t){
   let min=Math.round((fin-ini)/60000); const h=Math.floor(min/60); min=min%60;
   return (h>0?h+'h ':'')+min+'min';
 }
-const KTIPO = { checkin:{t:'Check-in',c:'var(--verde)'}, checkout:{t:'Check-out',c:'var(--rojo)'}, pago:{t:'Cobro',c:'var(--azul2)'}, anulacion:{t:'Cobro ANULADO',c:'var(--rojo)'}, cliente:{t:'Cliente nuevo',c:'var(--gris)'}, cargo:{t:'Consumo',c:'var(--naranja)'}, limpieza:{t:'Limpieza',c:'var(--azul2)'}, cambio:{t:'Cambio de hab.',c:'var(--gris)'}, credito:{t:'A crédito (por cobrar)',c:'#b36b00'}, autorizada:{t:'👑 Autorizada (Sr. Carlos)',c:'#7c3aed'}, comidainc:{t:'🍳 Comidas incluidas',c:'#0d7a5f'}, listamanual:{t:'Habitación lista a mano',c:'var(--azul2)'}, espera:{t:'Lista de espera',c:'var(--gris)'}, correccion:{t:'Corrección',c:'var(--naranja)'}, acompanante:{t:'Acompañante agregado',c:'var(--gris)'} };
+const KTIPO = { checkin:{t:'Check-in',c:'var(--verde)'}, checkout:{t:'Check-out',c:'var(--rojo)'}, pago:{t:'Cobro',c:'var(--azul2)'}, anulacion:{t:'Cobro ANULADO',c:'var(--rojo)'}, cliente:{t:'Cliente nuevo',c:'var(--gris)'}, cargo:{t:'Consumo',c:'var(--naranja)'}, limpieza:{t:'Limpieza',c:'var(--azul2)'}, cambio:{t:'Cambio de hab.',c:'var(--gris)'}, credito:{t:'A crédito (por cobrar)',c:'#b36b00'}, autorizada:{t:'👑 Autorizada',c:'#7c3aed'}, comidainc:{t:'🍳 Comidas incluidas',c:'#0d7a5f'}, listamanual:{t:'Habitación lista a mano',c:'var(--azul2)'}, espera:{t:'Lista de espera',c:'var(--gris)'}, correccion:{t:'Corrección',c:'var(--naranja)'}, acompanante:{t:'Acompañante agregado',c:'var(--gris)'} };
 function renderKardex(){
   let h='';
   const act = turnoActivo();
@@ -8225,7 +8316,7 @@ function corteTurnoBloques(B){
   if(B.comidas.length){ h+='<h2>Comidas incluidas (turno)</h2><table><tr><th>Hora</th><th>N° Control</th><th>Habitación</th><th>Restaurante</th><th>Comida</th><th class="r">USD</th></tr>'; let tm=0; B.comidas.forEach(k=>{ tm+=Number(k.montoUsd||0); h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+corteCtrl(k)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.restaurante||'—')+'</td><td>'+esc(k.comida?mealLabel(k.comida):planLabel(k.plan))+'</td><td class="r">'+fmtUSD(k.montoUsd||0)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="5">TOTAL COMIDAS</td><td class="r">'+fmtUSD(tm)+'</td></tr></table>'; }
   if(B.anuls.length){ h+='<h2>Cobros anulados en el turno</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Motivo</th><th>Anulado por</th><th class="r">Bs</th></tr>'; B.anuls.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.motivo||k.detalle||'')+'</td><td>'+esc(k.anuladoPor||k.usuario||'—')+'</td><td class="r">'+fmtBs(k.montoBs||0)+'</td></tr>'; }); h+='</table>'; }
   if(B.creds.length){ h+='<h2>Ventas a crédito (CXC) del turno</h2><table><tr><th>Hora</th><th>Habitación</th><th>Cliente</th><th>Detalle</th><th class="r">Bs</th><th class="r">USD</th></tr>'; let cb=0,cu=0; B.creds.forEach(k=>{ cb+=Number(k.credBs||0); cu+=Number(k.credUsd||0); h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td class="r">'+fmtBs(k.credBs||0)+'</td><td class="r">'+fmtUSD(k.credUsd||0)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="4">TOTAL A CRÉDITO</td><td class="r">'+fmtBs(cb)+'</td><td class="r">'+fmtUSD(cu)+'</td></tr></table>'; }
-  if(B.auts.length){ h+='<h2>👑 Autorizadas por el Sr. Carlos</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Invitado</th><th>Motivo</th><th>Cómo se cobra</th><th class="r">Normal</th><th class="r">Se cobra</th></tr>'; B.auts.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.autInvitado||'—')+'</td><td>'+esc(k.autMotivo||'—')+'</td><td>'+esc(k.autModo?autorizaModoTxt(k.autModo):(k.metodo||'—'))+'</td><td class="r">'+fmtUSD(k.autTarifaNormal||0)+'</td><td class="r">'+fmtUSD(k.autTarifaCobra||0)+'</td></tr>'; }); h+='</table>'; }
+  if(B.auts.length){ h+='<h2>👑 Autorizadas por '+esc(autorizaTitulo())+'</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Invitado</th><th>Motivo</th><th>Cómo se cobra</th><th class="r">Normal</th><th class="r">Se cobra</th></tr>'; B.auts.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.autInvitado||'—')+'</td><td>'+esc(k.autMotivo||'—')+'</td><td>'+esc(k.autModo?autorizaModoTxt(k.autModo):(k.metodo||'—'))+'</td><td class="r">'+fmtUSD(k.autTarifaNormal||0)+'</td><td class="r">'+fmtUSD(k.autTarifaCobra||0)+'</td></tr>'; }); h+='</table>'; }
   if(B.cambios.length){ h+='<h2>Cambios de habitación</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Detalle</th></tr>'; B.cambios.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?esc(String(k.hab)):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td></tr>'; }); h+='</table>'; }
   if(B.acomp.length){ h+='<h2>Acompañantes agregados</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Detalle</th></tr>'; B.acomp.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?esc(String(k.hab)):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td></tr>'; }); h+='</table>'; }
   if(B.lstMan.length){ h+='<h2>🧹 Habitaciones marcadas listas a mano</h2><table><tr><th>Hora</th><th>Habitación</th><th>Marcada por</th><th>Motivo</th></tr>'; B.lstMan.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?esc(String(k.hab)):'—')+'</td><td>'+esc(k.usuario||'—')+'</td><td>'+esc(k.nota||'')+'</td></tr>'; }); h+='</table>'; }
@@ -8250,30 +8341,33 @@ function imprimirKardex(turnoId){
 }
 
 /* ====== IDENTIDAD DEL HOTEL + PALETAS DE COLOR ====== */
-function hotel(){ return DB.get('hotel', {nombre:'',rif:'',direccion:'',eslogan:'',whatsapp:'',correo:'',plantillaBienvenida:'',plantillaReserva:'',logo:'',logoSize:52,logoWidth:0,palette:'azul',custom:{azul:'#0d3b66',azul2:'#1b6ca8'}}); }
+function hotel(){ return DB.get('hotel', {nombre:'',rif:'',direccion:'',eslogan:'',whatsapp:'',correo:'',plantillaBienvenida:'',plantillaReserva:'',logo:'',logoSize:52,logoWidth:0,palette:'azul',custom:{azul:'#0d3b66',azul2:'#1b6ca8'},autorizaNombre:'',autorizaCargo:'',autorizadasOn:true}); }
 function saveHotel(h){ DB.set('hotel', h); }
 const PALETAS = {
-  azul:    {nombre:'Azul clásico',    azul:'#0d3b66', azul2:'#1b6ca8', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'},
-  teal:    {nombre:'Verde azulado',   azul:'#0b4f4a', azul2:'#13877c', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'},
-  vino:    {nombre:'Vino / Borgoña',  azul:'#5c1a2b', azul2:'#9e2a4b', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'},
-  morado:  {nombre:'Morado elegante', azul:'#3d2c63', azul2:'#6a4c93', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'},
-  grafito: {nombre:'Grafito / Oro',   azul:'#222831', azul2:'#4b5563', verde:'#2e9e5b', rojo:'#d64045', naranja:'#c9922b', gris:'#7a8699'},
-  tropical:{nombre:'Tropical',        azul:'#065a82', azul2:'#1c7293', verde:'#1fa36b', rojo:'#e5574e', naranja:'#f3961c', gris:'#6f8591'},
-  oceano:  {nombre:'Océano',          azul:'#0b3d5c', azul2:'#2e86c1', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'},
-  esmeralda:{nombre:'Esmeralda',       azul:'#064e3b', azul2:'#0f9d75', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'},
-  cafe:    {nombre:'Café / Cobre',    azul:'#4a342a', azul2:'#8a5a44', verde:'#2e9e5b', rojo:'#d64045', naranja:'#c9922b', gris:'#7a8699'},
-  atardecer:{nombre:'Atardecer',       azul:'#7c2d12', azul2:'#ea7317', verde:'#2e9e5b', rojo:'#d64045', naranja:'#f59e0b', gris:'#7a8699'},
-  noche:   {nombre:'Azul noche',       azul:'#101827', azul2:'#2f4b7c', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699'}
+  azul:    {nombre:'Azul clásico',    azul:'#0d3b66', azul2:'#1b6ca8', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699', fondo:'#eef2f9', topbar:'#0a2f52'},
+  teal:    {nombre:'Verde azulado',   azul:'#0b4f4a', azul2:'#13877c', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699', fondo:'#eef2f9'},
+  vino:    {nombre:'Vino / Borgoña',  azul:'#5c1a2b', azul2:'#9e2a4b', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699', fondo:'#eef2f9'},
+  morado:  {nombre:'Morado elegante', azul:'#3d2c63', azul2:'#6a4c93', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699', fondo:'#eef2f9'},
+  grafito: {nombre:'Grafito / Oro',   azul:'#222831', azul2:'#4b5563', verde:'#2e9e5b', rojo:'#d64045', naranja:'#c9922b', gris:'#7a8699', fondo:'#eef2f9'},
+  tropical:{nombre:'Tropical',        azul:'#065a82', azul2:'#1c7293', verde:'#1fa36b', rojo:'#e5574e', naranja:'#f3961c', gris:'#6f8591', fondo:'#eef2f9'},
+  oceano:  {nombre:'Océano',          azul:'#0b3d5c', azul2:'#2e86c1', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699', fondo:'#eef2f9'},
+  esmeralda:{nombre:'Esmeralda',       azul:'#064e3b', azul2:'#0f9d75', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699', fondo:'#eef2f9'},
+  cafe:    {nombre:'Café / Cobre',    azul:'#4a342a', azul2:'#8a5a44', verde:'#2e9e5b', rojo:'#d64045', naranja:'#c9922b', gris:'#7a8699', fondo:'#eef2f9'},
+  atardecer:{nombre:'Atardecer',       azul:'#7c2d12', azul2:'#ea7317', verde:'#2e9e5b', rojo:'#d64045', naranja:'#f59e0b', gris:'#7a8699', fondo:'#eef2f9'},
+  noche:   {nombre:'Azul noche',       azul:'#101827', azul2:'#2f4b7c', verde:'#2e9e5b', rojo:'#d64045', naranja:'#e8871e', gris:'#7a8699', fondo:'#eef2f9', topbar:'#101827'}
 };
 function aplicarTema(){
   const h = hotel();
   let p = PALETAS[h.palette] || PALETAS.azul;
   if(h.palette==='personalizado'){
     const c = h.custom || {};
-    p = Object.assign({}, PALETAS.azul, {azul:(c.azul||'#0d3b66'), azul2:(c.azul2||'#1b6ca8')});
+    p = Object.assign({}, PALETAS.azul, {azul:(c.azul||'#0d3b66'), azul2:(c.azul2||'#1b6ca8'), fondo:(c.fondo||'#eef2f9'), topbar:(c.topbar||c.azul||'#0d3b66')});
   }
   const root = document.documentElement.style;
   root.setProperty('--azul',p.azul); root.setProperty('--azul2',p.azul2);
+  root.setProperty('--fondo', p.fondo || '#eef2f9');
+  root.setProperty('--topbarA', p.topbar || p.azul);
+  root.setProperty('--topbarB', p.azul);
   root.setProperty('--verde',p.verde); root.setProperty('--rojo',p.rojo);
   root.setProperty('--naranja',p.naranja); root.setProperty('--gris',p.gris);
 }
@@ -8433,10 +8527,99 @@ function tituloInput(k,label,def){
   return '<div class="field" style="margin-bottom:10px"><label style="font-size:13px">'+label+'</label>'+
     '<input value="'+escA(val)+'" placeholder="'+escA(def)+'" onchange="setTitulo(\''+k+'\',this.value)"></div>';
 }
+
+/* ====== MARCA DEL HOTEL (pantalla aparte del Master) ====== */
+function marcaPresetColores(p){
+  const h=hotel(); h.palette=p; saveHotel(h); aplicarTema(); pintarMarca(); render();
+}
+function marcaGuardar(){
+  const h=hotel();
+  const g=id=>{ const e=document.getElementById(id); return e?String(e.value).trim():undefined; };
+  let v;
+  v=g('h-nombre'); if(v!==undefined) h.nombre=v;
+  v=g('h-rif'); if(v!==undefined) h.rif=v;
+  v=g('h-dir'); if(v!==undefined) h.direccion=v;
+  v=g('h-eslogan'); if(v!==undefined) h.eslogan=v;
+  v=g('m-aut-nombre'); if(v!==undefined) h.autorizaNombre=v;
+  v=g('m-aut-cargo'); if(v!==undefined) h.autorizaCargo=v;
+  const chk=document.getElementById('m-aut-on'); if(chk) h.autorizadasOn=!!chk.checked;
+  saveHotel(h); aplicarTema(); pintarMarca(); render(); alert('Marca del hotel guardada. Todos los equipos la verán al sincronizar.');
+}
+function marcaColoresGuardar(){
+  const a=document.getElementById('m-col-1'); const b=document.getElementById('m-col-2'); const c=document.getElementById('m-col-3');
+  const h=hotel();
+  const c1=a?a.value:(h.custom&&h.custom.azul)||'#0d3b66';
+  const c2=b?b.value:(h.custom&&h.custom.azul2)||'#1b6ca8';
+  const c3=c?c.value:(h.custom&&h.custom.fondo)||'#eef2f9';
+  h.palette='personalizado'; h.custom={azul:c1, azul2:c2, fondo:c3, topbar:c1};
+  saveHotel(h); aplicarTema(); pintarMarca(); render(); alert('Colores aplicados a toda la aplicación.');
+}
+function marcaVolverOriginal(){
+  if(!confirm('¿Volver a los colores y datos originales? El logo y el nombre del hotel no se borran.')) return;
+  const h=hotel();
+  h.palette='azul'; h.custom={azul:'#0d3b66', azul2:'#1b6ca8', fondo:'#eef2f9', topbar:'#0a2f52'};
+  saveHotel(h); aplicarTema(); pintarMarca(); render();
+}
+function marcaCambiarLogo(ev){ cargarLogo(ev); }
+function renderMarca(){
+  const h=hotel();
+  const paleta=h.palette||'azul';
+  let html='';
+  html+='<div style="background:#eef6ff;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:13px;color:#44526a;line-height:1.6">Aquí decides <b>cómo se ve la aplicación</b>: el logo, los colores y quién autoriza las habitaciones de cortesía. El nombre, el RIF y la dirección van en la pestaña <b>Hotel</b>, no aquí. Lo que guardes aquí lo ven todos los equipos cuando sincronizan.<br><span style="font-size:12.5px;color:#55637a">💡 Los colores de <b>Libre (verde)</b>, <b>Ocupada</b>, <b>Sucia</b> y las <b>alertas en rojo</b> no cambian nunca, para que todos lean igual el mapa.</span></div>';
+  /* 1. Identidad */
+  html+='<div style="background:#fff;padding:20px;border-radius:12px;max-width:680px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:18px">';
+  html+='<div class="section-title" style="font-size:15px;margin-top:0">1) Logo del hotel</div>';
+  html+='<div class="field"><div style="display:flex;align-items:center;gap:14px;margin-top:6px">';
+  html+='<div style="width:76px;height:76px;border-radius:12px;border:1px solid #c7d0dd;background:#f3f6fb no-repeat center/contain'+(h.logo?(";background-image:url('"+h.logo+"')"):'')+'"></div>';
+  html+='<div><input type="file" id="h-logo-file" accept="image/*" onchange="marcaCambiarLogo(event)" style="padding:6px;border:none">';
+  html+=(h.logo?'<br><button class="btn-ghost" style="margin-top:6px;padding:6px 12px" onclick="quitarLogo()">Quitar logo</button>':'')+'</div></div>';
+  html+='<div class="field" style="margin-top:10px"><label>Tamaño del logo <span id="logo-size-num" style="color:#8893a5;font-weight:400">('+(parseInt(h.logoSize)||52)+' px)</span></label><input type="range" min="32" max="140" value="'+(parseInt(h.logoSize)||52)+'" oninput="cambiarTamanoLogo(this.value)" style="width:100%"></div>';
+  html+='<div class="field" style="margin-top:10px"><label>Ancho del logo <span id="logo-width-num" style="color:#8893a5;font-weight:400">'+((parseInt(h.logoWidth)||0)>0?('('+(parseInt(h.logoWidth)||0)+' px)'):'(automático)')+'</span></label><input type="range" min="0" max="320" value="'+(parseInt(h.logoWidth)||0)+'" oninput="cambiarAnchoLogo(this.value)" style="width:100%"></div>';
+  html+='<p style="font-size:12px;color:#8893a5;margin-top:6px;line-height:1.6">Imágenes hasta 8 MB (PNG o JPG); se optimizan solas. El logo se ve en la barra de arriba, la pantalla de entrada, los recibos y las fichas impresas.</p></div>';
+  /* 2. Colores */
+  html+='<div style="background:#fff;padding:20px;border-radius:12px;max-width:680px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:18px">';
+  html+='<div class="section-title" style="font-size:15px;margin-top:0">2) Colores</div>';
+  html+='<p style="font-size:12.5px;color:#8893a5;margin:0 0 12px;line-height:1.6">Toca un estilo y los colores cambian de una vez en toda la aplicación (barra de arriba, botones, títulos y fondo).</p>';
+  html+='<div style="display:flex;flex-wrap:wrap;gap:12px">';
+  Object.keys(PALETAS).forEach(k=>{ const p=PALETAS[k]; const sel=(paleta===k);
+    html+='<div onclick="marcaPresetColores(\''+k+'\')" style="cursor:pointer;border:2px solid '+(sel?p.azul2:'#e3e8f0')+';border-radius:10px;padding:10px;width:150px">';
+    html+='<div style="display:flex;gap:4px;margin-bottom:8px">';
+    [p.azul,p.azul2,p.verde,p.naranja,p.rojo].forEach(col=>{ html+='<div style="flex:1;height:22px;border-radius:4px;background:'+col+'"></div>'; });
+    html+='</div><div style="font-size:12.5px;font-weight:600;color:#44526a">'+p.nombre+(sel?' ✓':'')+'</div></div>';
+  });
+  html+='</div>';
+  const cst = h.custom || {azul:'#0d3b66',azul2:'#1b6ca8',fondo:'#eef2f9'};
+  const selPers = (paleta==='personalizado');
+  html+='<div style="margin-top:16px;border-top:1px solid #eef1f6;padding-top:14px">';
+  html+='<div style="font-size:13.5px;font-weight:700;color:#44526a;margin-bottom:4px">🎨 O pon tus propios colores'+(selPers?' <span style="color:#2e9e5b">✓ activo</span>':'')+'</div>';
+  html+='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">';
+  html+='<div style="text-align:center"><label style="font-size:12.5px;display:block;margin-bottom:4px">Color fuerte<br><span style="font-weight:400;color:#8893a5">(barra y títulos)</span></label><input type="color" id="m-col-1" value="'+(cst.azul||'#0d3b66')+'" style="width:64px;height:44px;padding:2px;border:1px solid #c7d0dd;border-radius:10px;cursor:pointer;background:#fff"></div>';
+  html+='<div style="text-align:center"><label style="font-size:12.5px;display:block;margin-bottom:4px">Color de botones<br><span style="font-weight:400;color:#8893a5">(botones principales)</span></label><input type="color" id="m-col-2" value="'+(cst.azul2||'#1b6ca8')+'" style="width:64px;height:44px;padding:2px;border:1px solid #c7d0dd;border-radius:10px;cursor:pointer;background:#fff"></div>';
+  html+='<div style="text-align:center"><label style="font-size:12.5px;display:block;margin-bottom:4px">Color del fondo<br><span style="font-weight:400;color:#8893a5">(detrás de las tarjetas)</span></label><input type="color" id="m-col-3" value="'+(cst.fondo||'#eef2f9')+'" style="width:64px;height:44px;padding:2px;border:1px solid #c7d0dd;border-radius:10px;cursor:pointer;background:#fff"></div>';
+  html+='<button class="btn-primary" style="padding:10px 18px" onclick="marcaColoresGuardar()">Aplicar mis colores</button>';
+  html+='</div>';
+  html+='<p style="font-size:12px;color:#8893a5;margin-top:10px;line-height:1.6">El verde de <b>Libre</b>, el de <b>Ocupada</b>, el de <b>Por limpiar</b> y el rojo de las <b>alertas</b> se mantienen siempre iguales para no confundir al personal.</p>';
+  html+='</div>';
+  html+='<div style="margin-top:14px"><button class="btn-ghost" style="padding:8px 14px" onclick="marcaVolverOriginal()">↩️ Volver a los colores originales</button></div>';
+  html+='</div>';
+  /* 3. Quién autoriza */
+  html+='<div style="background:#fff;padding:20px;border-radius:12px;max-width:680px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:18px">';
+  html+='<div class="section-title" style="font-size:15px;margin-top:0">3) Quién autoriza las habitaciones de cortesía</div>';
+  html+='<p style="font-size:12.5px;color:#8893a5;margin:0 0 12px;line-height:1.6">En el check-in, Recepción puede marcar una habitación como <b>autorizada</b> (gratis, mitad de precio o a crédito). Aquí pones el nombre de quien autoriza, para que aparezca en la ficha, el reporte y los recibos. Si cambia la persona, lo cambias aquí y listo.</p>';
+  html+='<div style="display:flex;gap:10px;flex-wrap:wrap"><div class="field" style="flex:2;min-width:200px"><label>Nombre de quien autoriza</label><input id="m-aut-nombre" value="'+escA(h.autorizaNombre||'')+'" placeholder="ej: Carlos Pérez"></div>';
+  html+='<div class="field" style="flex:1;min-width:150px"><label>Cargo</label><input id="m-aut-cargo" value="'+escA(h.autorizaCargo||'')+'" placeholder="ej: Dueño, Gerente"></div></div>';
+  html+='<label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:#f5f7fb;border:1px solid #e3e8f0;border-radius:10px;padding:12px 14px;margin-top:4px"><input type="checkbox" id="m-aut-on" '+(autorizadasOn()?'checked':'')+' style="width:18px;height:18px;margin:0"><span style="font-size:13.5px;color:#44526a"><b>Usar habitaciones autorizadas</b><br><span style="font-size:12px;color:#8893a5">Si lo apagas, desaparece la casilla del check-in y la pestaña Autorizadas. Lo que ya está anotado no se borra.</span></span></label>';
+  html+='</div>';
+  /* 4. Guardar */
+  html+='<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn-green" style="padding:12px 22px" onclick="marcaGuardar()">💾 Guardar la marca del hotel</button>';
+  html+='<button class="btn-ghost" style="padding:12px 18px" onclick="adminTab=\'hotel\';render()">📄 Ir a Impresión y mensajes</button></div>';
+  return html;
+}
 function renderIdentidad(){
   const h = hotel();
   let html='<div style="background:#fff;padding:20px;border-radius:12px;max-width:620px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:20px">';
   html+='<div class="section-title" style="font-size:15px;margin-top:0">Datos del hotel</div>';
+  html+='<p style="font-size:12px;color:#8893a5;margin:-6px 0 12px;line-height:1.6">Aquí van los <b>datos del hotel</b> (nombre, RIF, dirección), los <b>mensajes al huésped</b> y las <b>formas de pago</b>. El <b>logo, los colores y quién autoriza</b> están en la pestaña <b>🏨 Marca del Hotel</b>.</p>';
   html+='<div class="field"><label>Nombre del hotel</label><input id="h-nombre" value="'+escA(h.nombre)+'" placeholder="ej: Hotel Las Palmas"></div>';
   html+='<div class="field"><label>RIF</label><input id="h-rif" value="'+escA(h.rif)+'" placeholder="ej: J-12345678-9"></div>';
   html+='<div class="field"><label>Dirección</label><input id="h-dir" value="'+escA(h.direccion)+'" placeholder="Av. principal, ciudad, estado"></div>';
@@ -8449,38 +8632,10 @@ function renderIdentidad(){
   html+='<div class="field"><label>Mensaje de reserva (localizador)</label><textarea id="h-tpl-reserva" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(h.plantillaReserva||plantillaReservaDefault())+'</textarea></div>';
   html+='<p style="font-size:12px;color:#8893a5;margin:-4px 0 10px;line-height:1.6">Escribe el mensaje a tu gusto. Usa estas <b>etiquetas</b> y la app las cambia solas por los datos reales:<br>• <b>[nombre]</b> = nombre del huésped · <b>[hotel]</b> = nombre del hotel<br>• Solo en bienvenida: <b>[habitacion]</b> = número de habitación<br>• Solo en reserva: <b>[localizador]</b>, <b>[entrada]</b>, <b>[salida]</b><br>El WhatsApp y el correo del hotel se agregan solos al final. Si borras todo el texto, vuelve al mensaje por defecto.</p>';
   html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 12px"><button class="btn-ghost" style="padding:8px 14px" onclick="previewMensaje(\'bienvenida\')">👁️ Ver bienvenida</button><button class="btn-ghost" style="padding:8px 14px" onclick="previewMensaje(\'reserva\')">👁️ Ver reserva</button></div>';
-  html+='<div class="field"><label>Logo</label><div style="display:flex;align-items:center;gap:14px;margin-top:6px">';
-  html+='<div style="width:72px;height:72px;border-radius:12px;border:1px solid #c7d0dd;background:#f3f6fb no-repeat center/contain'+(h.logo?(";background-image:url('"+h.logo+"')"):'')+'"></div>';
-  html+='<div><input type="file" id="h-logo-file" accept="image/*" onchange="cargarLogo(event)" style="padding:6px;border:none">';
-  html+=(h.logo?'<br><button class="btn-ghost" style="margin-top:6px;padding:6px 12px" onclick="quitarLogo()">Quitar logo</button>':'')+'</div></div>';
-  html+='<div class="field" style="margin-top:10px"><label>Tamaño del logo <span id="logo-size-num" style="color:#8893a5;font-weight:400">('+(parseInt(h.logoSize)||52)+' px)</span></label><input type="range" min="32" max="140" value="'+(parseInt(h.logoSize)||52)+'" oninput="cambiarTamanoLogo(this.value)" style="width:100%"></div>';
-  html+='<div class="field" style="margin-top:10px"><label>Ancho del logo <span id="logo-width-num" style="color:#8893a5;font-weight:400">'+((parseInt(h.logoWidth)||0)>0?('('+(parseInt(h.logoWidth)||0)+' px)'):'(automático)')+'</span></label><input type="range" min="0" max="320" value="'+(parseInt(h.logoWidth)||0)+'" oninput="cambiarAnchoLogo(this.value)" style="width:100%"></div>';
-  html+='<p style="font-size:12px;color:#8893a5;margin-top:6px">Puedes subir imágenes hasta 8 MB (PNG o JPG); se optimizan solas para que la app siga rápida. El logo siempre se muestra completo (sin recortes). Usa <b>Tamaño</b> para el alto y <b>Ancho del logo</b> si tu logo es alargado y necesita más espacio a lo ancho (deja el ancho a la izquierda del todo para que sea automático). Aparece en la barra superior, el login, los recibos y las fichas impresas.</p></div>';
-  html+='<button class="btn-primary" onclick="guardarHotel()">Guardar datos del hotel</button></div>';
-  html+='<div style="background:#fff;padding:20px;border-radius:12px;max-width:620px;box-shadow:0 2px 8px rgba(0,0,0,.05)">';
-  html+='<div class="section-title" style="font-size:15px;margin-top:0">Paleta de colores</div>';
-  html+='<div style="display:flex;flex-wrap:wrap;gap:12px">';
-  Object.keys(PALETAS).forEach(k=>{ const p=PALETAS[k]; const sel=(h.palette||'azul')===k;
-    html+='<div onclick="elegirPaleta(\''+k+'\')" style="cursor:pointer;border:2px solid '+(sel?p.azul2:'#e3e8f0')+';border-radius:10px;padding:10px;width:150px">';
-    html+='<div style="display:flex;gap:4px;margin-bottom:8px">';
-    [p.azul,p.azul2,p.verde,p.naranja,p.rojo].forEach(col=>{ html+='<div style="flex:1;height:22px;border-radius:4px;background:'+col+'"></div>'; });
-    html+='</div><div style="font-size:12.5px;font-weight:600;color:#44526a">'+p.nombre+(sel?' ✓':'')+'</div></div>';
-  });
-  html+='</div><p style="font-size:12px;color:#8893a5;margin-top:12px">Al tocar una paleta, los colores de toda la aplicación cambian al instante.</p>';
-  const cst = h.custom || {azul:'#0d3b66',azul2:'#1b6ca8'};
-  const selPers = (h.palette==='personalizado');
-  html+='<div style="margin-top:14px;border-top:1px solid #eef1f6;padding-top:14px">';
-  html+='<div style="font-size:13.5px;font-weight:700;color:#44526a;margin-bottom:4px">✨ O crea tu color personalizado'+(selPers?' <span style="color:#2e9e5b">✓ activo</span>':'')+'</div>';
-  html+='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">';
-  html+='<div style="text-align:center"><label style="font-size:12.5px;display:block;margin-bottom:4px">Color principal</label><input type="color" id="col-principal" value="'+(cst.azul||'#0d3b66')+'" style="width:64px;height:44px;padding:2px;border:1px solid #c7d0dd;border-radius:10px;cursor:pointer;background:#fff"></div>';
-  html+='<div style="text-align:center"><label style="font-size:12.5px;display:block;margin-bottom:4px">Color secundario</label><input type="color" id="col-secundario" value="'+(cst.azul2||'#1b6ca8')+'" style="width:64px;height:44px;padding:2px;border:1px solid #c7d0dd;border-radius:10px;cursor:pointer;background:#fff"></div>';
-  html+='<button class="btn-primary" style="padding:10px 18px" onclick="aplicarColorPersonalizado()">Aplicar mis colores</button>';
-  html+='</div>';
-  html+='<p style="font-size:12px;color:#8893a5;margin-top:10px;line-height:1.6">El <b>color principal</b> es el fuerte (barra de arriba y títulos) y el <b>secundario</b> es el de los botones. Los colores de “cobrar/disponible” (verde) y de “alerta” (rojo) se mantienen siempre para que todos los entiendan igual.</p>';
-  html+='</div></div>';
+  html+='<div style="margin:6px 0 14px"><button class="btn-ghost" style="padding:8px 14px" onclick="adminTab=\'marca\';render()">🏨 El logo y los colores se cambian en Marca del Hotel</button></div>';
   if(esMaster(session().rol)){
     html+='<div style="background:#fff;padding:20px;border-radius:12px;max-width:620px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-top:20px">';
-    html+='<div class="section-title" style="font-size:15px;margin-top:0">Formas de pago</div>';
+    html+='<div class="section-title" style="font-size:15px;margin-top:0">Formas de pago</div>'
     html+='<p style="font-size:12px;color:#8893a5;margin-top:0">Agrega aquí los bancos, pagos móviles y puntos de venta donde reciben los pagos. Lo que pongas aquí aparece al cobrar y en el arqueo de caja. Solo tú (Master) puedes editarlas.</p>';
     const ms=getMetodos();
     ms.forEach((m,i)=>{
