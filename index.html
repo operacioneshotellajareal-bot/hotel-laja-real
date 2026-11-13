@@ -632,6 +632,7 @@ const PERMISOS_CATALOGO=[
   ['puedeVerTelefonoHuesped','Ver el teléfono del huésped','Muestra el teléfono y la cédula del huésped en la ficha del objeto, para poder llamarlo. Si está apagado, solo se ve el nombre.'],
   ['puedeEntregarObjeto','Entregar o desechar objetos olvidados','Permite marcar un objeto como “Entregado al huésped” o “Desechado”, dejando la constancia de quién lo recibió.'],
   ['verificarObjetosVencidos','Ver el aviso de objetos vencidos','Muestra arriba de la pestaña cuántos objetos ya pasaron el plazo de guardado y esperan disposición.'],
+  ['unirCuenta','Unir y separar cuentas','Permite juntar la cuenta de dos habitaciones (que una pague todo, o que sus consumos se carguen a la otra) y también separarlas de nuevo. Muestra el botón “🔗 Unir cuenta” en la ficha de la habitación ocupada.'],
   ['marcarNoShow','Marcar reservas que no llegaron (No show)','Permite tocar “No show” en una reserva que pasó su día de entrada y el huésped nunca llegó, para cerrarla y dejar la habitación libre.']
 ];
 const PERMISOS_CATALOGO_HK=[
@@ -660,7 +661,7 @@ const ROLES_ETIQUETA={recepcion:'Recepcionista', supervisor:'Supervisor de recep
 function permisosDefault(rol){
   if(rol==='housekeeping') return {verPendientes:true, puedeMarcarLista:true, puedeReportarDano:true, verObjetos:true, anotarObjetos:true, puedeVerTelefonoHuesped:true, puedeEntregarObjeto:false, verificarObjetosVencidos:true};
   if(rol==='mantenimiento') return {verMantenimiento:true, puedeResolver:true, verListaHab:true, puedeReportar:true};
-  return {cambiarHab:true, verTablero:true, verCxC:true, anularPagos:false, gestionHab:false, verReportePagos:true, verResumenOcupacion:(rol==='supervisor'), verOcupacionTipo:true, editarTasa:true, verMantenimiento:(rol==='supervisor'), verPolicial:true, habAutorizada:true, verObjetos:true, anotarObjetos:true, puedeVerTelefonoHuesped:true, puedeEntregarObjeto:true, verificarObjetosVencidos:true, marcarNoShow:true};
+  return {cambiarHab:true, verTablero:true, verCxC:true, anularPagos:false, gestionHab:false, verReportePagos:true, verResumenOcupacion:(rol==='supervisor'), verOcupacionTipo:true, editarTasa:true, verMantenimiento:(rol==='supervisor'), verPolicial:true, habAutorizada:true, verObjetos:true, anotarObjetos:true, puedeVerTelefonoHuesped:true, puedeEntregarObjeto:true, verificarObjetosVencidos:true, unirCuenta:true, marcarNoShow:true};
 }
 function permisosDe(rol){ const p=DB.get('permisos',null); const sp=(p&&p[rol])?p[rol]:{}; return Object.assign(permisosDefault(rol), sp); }
 function setPermiso(rol,k,v){ const p=DB.get('permisos',{})||{}; if(!p[rol]) p[rol]={}; p[rol][k]=!!v; DB.save('permisos', p); }
@@ -7381,6 +7382,15 @@ function cuentaUnidaBox(r){
   if(!r || r.estado!=='ocupada') return '';
   const D=datosCuentaHab(r);
   let h='';
+  /* guia: cuando el permiso esta apagado, decimos donde prenderlo (en vez de no mostrar nada) */
+  if(!puedeUnirCuenta() && (D.list.length>1 || cuartosQueCarganA(r).length)){
+    h+='<div style="background:#f6f7fa;border:1px dashed #c9d0dd;border-radius:10px;padding:9px 12px;margin:8px 0;font-size:12.4px;color:#667">🔗 Esta habitación está en una cuenta unida. Para separarla, el Master debe prender el permiso “Unir y separar cuentas” en Permisos.</div>';
+    return h;
+  }
+  if(D.list.length===1 && !cuartosQueCarganA(r).length && puedeUnirCuenta()){
+    h+='<div style="background:#f8fafd;border:1px dashed #c9d8ee;border-radius:10px;padding:9px 12px;margin:8px 0;font-size:12.4px;color:#55637a">🔗 ¿Llega un amigo y carga a esta cuenta, o hay que cobrar dos habitaciones juntas? Usa el botón <b>Unir cuenta</b>.</div>';
+    return h;
+  }
   if(D.list.length>1){
     h+='<div style="background:#eef3fb;border:1px solid #c9d8ee;border-radius:10px;padding:10px 12px;margin:8px 0;font-size:12.6px;color:#2a4a73">';
     h+='<div style="font-weight:800;margin-bottom:4px">🔗 Cuenta unida</div>';
