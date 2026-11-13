@@ -9449,7 +9449,37 @@ function leerHotelForm(){
   v=g('h-tpl-reserva'); if(v!==undefined) h.plantillaReserva=v;
   return h;
 }
-function guardarHotel(){ const h=leerHotelForm(); saveHotel(h); aplicarTema(); pintarMarca(); render(); alert('Datos del hotel guardados.'); }
+/* [MSJ] Los mensajes se guardan solos mientras escribes, y lo escrito se conserva aunque la pantalla se vuelva a pintar */
+var _hotelTplDraft={};
+function hotelTplGuardar(){
+  var b=document.getElementById('h-tpl-bienvenida'), r=document.getElementById('h-tpl-reserva');
+  if(b && b.value!==undefined) _hotelTplDraft.bienvenida=b.value;
+  if(r && r.value!==undefined) _hotelTplDraft.reserva=r.value;
+  var h=hotel();
+  if(_hotelTplDraft.bienvenida!==undefined) h.plantillaBienvenida=String(_hotelTplDraft.bienvenida);
+  if(_hotelTplDraft.reserva!==undefined) h.plantillaReserva=String(_hotelTplDraft.reserva);
+  saveHotel(h);
+  return h;
+}
+var _hotelTplTimer=null;
+function hotelTplCambio(){
+  var b=document.getElementById('h-tpl-bienvenida'), r=document.getElementById('h-tpl-reserva');
+  if(b && b.value!==undefined) _hotelTplDraft.bienvenida=b.value;
+  if(r && r.value!==undefined) _hotelTplDraft.reserva=r.value;
+  clearTimeout(_hotelTplTimer);
+  _hotelTplTimer=setTimeout(function(){ hotelTplGuardar(); }, 900);
+}
+function hotelTplRestaurar(){
+  if(!confirm('¿Volver los dos mensajes al texto original de la app?')) return;
+  _hotelTplDraft={};
+  var h=hotel(); h.plantillaBienvenida=''; h.plantillaReserva=''; saveHotel(h);
+  render();
+}
+function guardarHotel(){
+  hotelTplGuardar();
+  _hotelTplDraft={};
+  const h=leerHotelForm(); saveHotel(h); aplicarTema(); pintarMarca(); render(); alert('Datos del hotel guardados, incluidos los mensajes.');
+}
 function elegirPaleta(k){ const h=leerHotelForm(); h.palette=k; saveHotel(h); aplicarTema(); pintarMarca(); render(); }
 function aplicarColorPersonalizado(){
   const a=document.getElementById('col-principal'); const b=document.getElementById('col-secundario');
@@ -9681,10 +9711,11 @@ function renderIdentidad(){
   html+='<div class="field"><label>Correo del hotel</label><input id="h-correo" value="'+escA(h.correo||'')+'" placeholder="recepcion@tuhotel.com"></div>';
   html+='<p style="font-size:12px;color:#8893a5;margin:-4px 0 10px">Estos dos datos se añaden al final de los mensajes de WhatsApp y correo que le envías al huésped, para que sepa cómo responderte. <b>No</b> es el número desde el que se envía: eso depende del WhatsApp abierto en este equipo (ver abajo).</p>';
   html+='<div class="section-title" style="font-size:15px;margin-top:18px">Mensajes al huésped</div>';
-  html+='<div class="field"><label>Mensaje de bienvenida (al hacer check-in)</label><textarea id="h-tpl-bienvenida" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(h.plantillaBienvenida||plantillaBienvenidaDefault())+'</textarea></div>';
-  html+='<div class="field"><label>Mensaje de reserva (localizador)</label><textarea id="h-tpl-reserva" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(h.plantillaReserva||plantillaReservaDefault())+'</textarea></div>';
+  html+='<div class="field"><label>Mensaje de bienvenida (al hacer check-in)</label><textarea id="h-tpl-bienvenida" oninput="hotelTplCambio()" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(_hotelTplDraft.bienvenida!==undefined?_hotelTplDraft.bienvenida:(h.plantillaBienvenida||plantillaBienvenidaDefault()))+'</textarea></div>';
+  html+='<div class="field"><label>Mensaje de reserva (localizador)</label><textarea id="h-tpl-reserva" oninput="hotelTplCambio()" rows="4" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #d7deea;border-radius:10px;font-size:14px;font-family:inherit;resize:vertical">'+esc(_hotelTplDraft.reserva!==undefined?_hotelTplDraft.reserva:(h.plantillaReserva||plantillaReservaDefault()))+'</textarea></div>';
   html+='<p style="font-size:12px;color:#8893a5;margin:-4px 0 10px;line-height:1.6">Escribe el mensaje a tu gusto. Usa estas <b>etiquetas</b> y la app las cambia solas por los datos reales:<br>• <b>[nombre]</b> = nombre del huésped · <b>[hotel]</b> = nombre del hotel<br>• Solo en bienvenida: <b>[habitacion]</b> = número de habitación<br>• Solo en reserva: <b>[localizador]</b>, <b>[entrada]</b>, <b>[salida]</b><br>El WhatsApp y el correo del hotel se agregan solos al final. Si borras todo el texto, vuelve al mensaje por defecto.</p>';
-  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 12px"><button class="btn-ghost" style="padding:8px 14px" onclick="previewMensaje(\'bienvenida\')">👁️ Ver bienvenida</button><button class="btn-ghost" style="padding:8px 14px" onclick="previewMensaje(\'reserva\')">👁️ Ver reserva</button></div>';
+  html+='<div style="background:#eaf7ee;border:1px solid #bfe4cc;border-radius:8px;padding:9px 12px;font-size:12.5px;color:#1d6b38;margin:0 0 10px;line-height:1.6">✅ Estos mensajes <b>se guardan solos mientras escribes</b>. No hace falta buscar el botón de guardar; puedes probarlo cerrando la app y volviendo a entrar. Si quieres confirmar de una vez, usa el botón <b>Guardar datos del hotel</b> al final de la página.</div>';
+  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 12px"><button class="btn-ghost" style="padding:8px 14px" onclick="previewMensaje(\'bienvenida\')">👁️ Ver bienvenida</button><button class="btn-ghost" style="padding:8px 14px" onclick="previewMensaje(\'reserva\')">👁️ Ver reserva</button><button class="btn-ghost" style="padding:8px 14px" onclick="hotelTplRestaurar()">↩️ Volver al mensaje original</button></div>';
   html+='<div style="margin:6px 0 14px"><button class="btn-ghost" style="padding:8px 14px" onclick="adminTab=\'marca\';render()">🏨 El logo y los colores se cambian en Marca del Hotel</button></div>';
   if(esMaster(session().rol)){
     html+='<div style="background:#fff;padding:20px;border-radius:12px;max-width:620px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-top:20px">';
