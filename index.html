@@ -205,6 +205,22 @@ button.btn-primary:hover,.btn-primary:hover{background:linear-gradient(95deg,var
 .modal{border-radius:22px;box-shadow:0 28px 70px rgba(13,30,55,.4);}
 input,select,textarea{border-radius:11px;transition:border-color .15s ease,box-shadow .15s ease;}
 input:focus,select:focus,textarea:focus{outline:none;border-color:#1b6ca8;box-shadow:0 0 0 3px rgba(27,108,168,.18);}
+.pg-doc{background:#fff;border-radius:14px;box-shadow:0 2px 10px rgba(13,30,55,.07);padding:18px 22px 24px;max-width:920px}
+.pg-doc .pg-h3{font-size:15.5px;color:var(--azul,#0d3b66);margin:22px 0 8px;padding-bottom:6px;border-bottom:1px solid #e3e9f2;line-height:1.35}
+.pg-doc .pg-h3:first-child{margin-top:0}
+.pg-doc .pg-sub{font-size:12.5px;color:#8893a5;margin:-2px 0 8px}
+.pg-doc .pg-lista{margin:0;padding-left:22px}
+.pg-doc .pg-lista>li{margin-bottom:7px;line-height:1.65;font-size:13.5px;color:#2b3648}
+.pg-doc .pg-sublista{margin:6px 0 4px;padding-left:18px}
+.pg-doc .pg-sublista>li{font-size:13px;line-height:1.6;color:#44526a;margin-bottom:4px}
+.pg-doc .pg-caja{border-radius:10px;padding:11px 14px;margin:10px 0 4px;font-size:13px;line-height:1.6}
+.pg-doc .pg-warn{background:#fff4e5;border:1px solid #ffd59a;color:#8a5200}
+.pg-doc .pg-tip{background:#eaf7ee;border:1px solid #bfe6cb;color:#1f6b35}
+.pg-doc .pg-tabla{width:100%;border-collapse:collapse;font-size:12.8px;margin:10px 0 6px;border-radius:8px;overflow:hidden}
+.pg-doc .pg-tabla th,.pg-doc .pg-tabla td{border:1px solid #dbe3ef;padding:6px 10px;text-align:left}
+.pg-doc .pg-tabla th{background:#eef3fa;color:#44526a;font-size:12px;text-transform:uppercase;letter-spacing:.3px}
+@media print{.pg-doc{box-shadow:none;padding:0}}
+@media (max-width:640px){.pg-doc{padding:14px 14px 18px}.pg-doc .pg-lista>li{font-size:13px}}
 </style>
 </head>
 <body>
@@ -1063,11 +1079,13 @@ function renderAdministracion(){
   if(autorizadasOn()) tabsTop+='<div class="tab '+(admView==='autorizadas'?'active':'')+'" onclick="admView=\'autorizadas\';render()">👑 Autorizadas</div>';
   tabsTop+='<div class="tab '+(admView==='servicio'?'active':'')+'" onclick="admView=\'servicio\';render()">🍽️ Servicio a la habitación</div>';
   tabsTop+='<div class="tab '+(admView==='pagos'?'active':'')+'" onclick="admView=\'pagos\';render()">💳 Reporte de pagos</div>';
+  tabsTop+='<div class="tab '+(admView==='guia'?'active':'')+'" onclick="admView=\'guia\';render()">📘 Guía de uso</div>';
   tabsTop+='</div></div>';
   if(admView==='cxc'){ c.innerHTML = tabsTop + renderCxC(); return; }
   if(admView==='autorizadas'){ if(!autorizadasOn()) admView='bandeja'; else { c.innerHTML = tabsTop + renderAutorizadasAdmin(); return; } }
   if(admView==='servicio'){ c.innerHTML = tabsTop + renderServicioAdmin(); return; }
   if(admView==='pagos'){ c.innerHTML = tabsTop + admRepHTML(); return; }
+  if(admView==='guia'){ c.innerHTML = tabsTop + renderGuiaUso(); return; }
   let arr=DB.get('enviosAdmin',[])||[];
   arr=arr.slice().sort((a,b)=>(b.ts||0)-(a.ts||0));
   let html=tabsTop+noShowAdminHTML()+'<div class="section-title">📥 Bandeja de administración</div>';
@@ -1272,7 +1290,8 @@ function renderDueno(){
   h+='<div class="section-title" style="margin:0">👑 Panel del Dueño</div>';
   h+='<div style="flex:1"></div>';
   h+='<input type="month" value="'+escA(duenoMes)+'" onchange="setDuenoMes(this.value)" style="max-width:170px">';
-  h+='<button class="btn-primary" onclick="imprimirDueno()">🖨️ Imprimir / PDF</button></div>';
+  h+='<button class="btn-primary" onclick="imprimirDueno()">🖨️ Imprimir / PDF</button>';
+  h+='<button class="btn-ghost" onclick="verGuiaDueno()">📘 Guía de uso</button></div>';
   h+='<p style="font-size:13px;color:#8893a5;margin:0 0 16px;line-height:1.6">Resumen del hotel de un vistazo. Es una vista de <b>solo lectura</b>: aquí solo se mira, no se toca nada. Lo de <b>Hoy</b> es en tiempo real; lo del <b>Mes</b> usa el mes que elijas arriba.</p>';
   /* --- Tarjetas HOY --- */
   h+='<div class="section-title" style="font-size:15px">📅 Hoy</div>';
@@ -1326,6 +1345,9 @@ function renderDueno(){
   h+='</div>';
   c.innerHTML=h;
   try{ setTimeout(ajustarTabs,30); }catch(e){}
+}
+function verGuiaDueno(){
+  showModal('<div style="max-height:70vh;overflow:auto">'+renderGuiaUso()+'</div><div style="text-align:right;margin-top:12px"><button class="btn-ghost" onclick="cerrarModal()">Cerrar</button></div>');
 }
 function imprimirDueno(){
   const hoy=hoyISO();
@@ -1832,6 +1854,7 @@ function renderRecepcion(){
   if(puede('editarPreciosComida')) tabs += recepTab('comidas','🍳 Comidas incluidas');
   if(verPolicial) tabs += recepTab('policial','🚔 Reporte policial');
   if(verObjetos) tabs += recepTab('objetos','🧳 Objetos olvidados');
+  tabs += recepTab('guia','📘 Guía de uso');
   html += '<div class="tabs-wrap"><div class="tabs">'+tabs+'</div></div>';
   if(recepView==='tablero'){ c.innerHTML = html + renderTablero(); return; }
   if(recepView==='caja'){ c.innerHTML = html + renderCaja(); return; }
@@ -1842,6 +1865,7 @@ function renderRecepcion(){
   if(recepView==='ocupacion'){ c.innerHTML = html + renderOcupacionTipo(); return; }
   if(recepView==='policial'){ c.innerHTML = html + renderPolicialSeguro(); return; }
   if(recepView==='objetos'){ c.innerHTML = html + renderObjetosOlvidados(); return; }
+  if(recepView==='guia'){ c.innerHTML = html + renderGuiaUso(); return; }
   if(recepView==='tasa'){ c.innerHTML = html + renderTasa(); return; }
   if(recepView==='clientes'){ c.innerHTML = html + renderClientes(); return; }
   if(recepView==='kardex'){ c.innerHTML = html + renderKardex(); return; }
@@ -2047,7 +2071,38 @@ function waNum(tel){
 function abrirWa(tel, msg){
   var n=waNum(tel);
   if(!n){ alert('No hay un número de WhatsApp válido. Escríbelo e inténtalo de nuevo.'); return; }
-  window.open('https://wa.me/'+n+'?text='+encodeURIComponent(msg||''), '_blank');
+  var txt=String(msg||'').replace(/👨‍👩‍👧‍👦/g,'👨').replace(/🏳️‍🌈/g,'🏳');
+  /* WhatsApp corta los textos muy largos y puede partir un emoji a la mitad (se ve un signo raro).
+     Se manda en trozos sin romper emojis ni palabras. */
+  var trozos=waTrozos(txt, 1000);
+  trozos.forEach(function(t){ window.open('https://wa.me/'+n+'?text='+encodeURIComponent(t), '_blank'); });
+}
+function waTrozos(txt, max){
+  var s=limpiarEmojiRoto(txt);
+  if(s.length<=max) return [s];
+  var out=[], pos=0;
+  while(pos<s.length){
+    var fin=Math.min(pos+max, s.length);
+    if(fin<s.length){
+      /* no cortar un emoji: si el caracter anterior es la mitad de un par, retroceder uno */
+      var cp=s.charCodeAt(fin-1);
+      if(cp>=0xD800 && cp<=0xDBFF) fin--;
+      /* retroceder mientras sea mitad de par (mitades de otro emoji, tono de piel, banderas...) */
+      var guard=0;
+      while(fin>pos+1 && guard++<2000){
+        var a=s.charCodeAt(fin-1), b=s.charCodeAt(fin);
+        if((a>=0xD800 && a<=0xDBFF) || (b>=0xDC00 && b<=0xDFFF)) fin--; else break;
+      }
+      /* cortar en un espacio o salto si se puede, para que no quede una palabra partida */
+      var corte=-1;
+      for(var k=fin;k>Math.max(pos, fin-200);k--){ var ch=s.charAt(k-1); if(ch===' '||ch==='\n'){ corte=k; break; } }
+      if(corte>pos) fin=corte;
+    }
+    out.push(s.slice(pos, fin).replace(/\s+$/,''));
+    pos=fin;
+    while(pos<s.length && /\s/.test(s.charAt(pos))) pos++;
+  }
+  return out.filter(function(x){ return x.length>0; });
 }
 function abrirMail(correo, asunto, cuerpo){
   correo=String(correo||'').trim();
@@ -2070,8 +2125,17 @@ function msgCheckout(nombre, noches){
   return aplicarPlantilla(tpl, {nombre:soloNombre(nombre), noches:(noches||1), hotel:nombreHotelMsg()})+firmaHotelMsg();
 }
 function plantillaReservaDefault(){ return '¡Hola [nombre]! 🏨 Tu reserva en [hotel] quedó confirmada. Tu número localizador es [localizador]. Entrada: [entrada] · Salida: [salida]. Presenta este código al llegar. ¡Te esperamos! 😊'; }
+function limpiarEmojiRoto(txt){
+  /* quita caracteres sueltos de emoji (mitades de par) que quedaron al copiar y pegar,
+     y normaliza el espacio de variacion (️) para que el emoji se vea entero. */
+  var s=String(txt==null?'':txt);
+  try{
+    s=s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g,'').replace(/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g,'$1');
+  }catch(e){}
+  return s;
+}
 function aplicarPlantilla(tpl, vars){
-  var s=String(tpl||'');
+  var s=limpiarEmojiRoto(tpl);
   Object.keys(vars).forEach(function(k){ s=s.split('['+k+']').join(vars[k]==null?'':String(vars[k])); });
   return s;
 }
@@ -5175,6 +5239,7 @@ function hkTabs(act, verSalones, nPend, verObjetos, nObj){
   h+=b('habitaciones','🛏️ Habitaciones'+(nPend?(' · '+nPend+' por limpiar'):''),act==='habitaciones');
   if(verSalones) h+=b('salones','🏛️ Salones y oficinas',act==='salones');
   if(verObjetos) h+=b('objetos','🧳 Objetos olvidados'+(nObj?(' · '+nObj):''),act==='objetos');
+  h+=b('guia','📘 Guía de uso',act==='guia');
   h+='</div>';
   return h;
 }
@@ -5197,6 +5262,7 @@ function renderHousekeeping(){
     html += salonesBody(!!perm.verPendientes, false);
     c.innerHTML = html; return;
   }
+  if(_hkTab==='guia'){ html += renderGuiaUso(); c.innerHTML = html; return; }
   if(_hkTab==='objetos'){
     html += renderObjetosOlvidados();
     c.innerHTML = html; return;
@@ -5703,6 +5769,7 @@ function mtTabs(act, verSalones, verInv, nPend){
   h+=b('reportes','🔧 Reparaciones'+(nPend?(' ('+nPend+')'):''),act==='reportes');
   if(verSalones) h+=b('salones','🏛️ Salones y oficinas',act==='salones');
   if(verInv) h+=b('inventario','📦 Inventario',act==='inventario');
+  h+=b('guia','📘 Guía de uso',act==='guia');
   h+='</div>';
   return h;
 }
@@ -5739,6 +5806,7 @@ function mantenimientoBody(puedeResolver){
     html += inventarioBody();
     return html;
   }
+  if(_mtTab==='guia'){ html += renderGuiaUso(); return html; }  // [GUIA-MOD]
 
   html += mantenimientoListaHTML(_permMant);
 
@@ -6140,8 +6208,9 @@ function renderAdmin(){
   if(adminTab==='cxc' && !cxcAdminOn()) adminTab='resumen';
   let html = '<div class="section-title">Panel de Administración</div>';
   html += '<div class="tabs-wrap"><div class="tabs">'+
-    tabBtn('tablero','📋 Tablero del día')+tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+(cxcAdminOn()?tabBtn('cxc','💳 CXC'):'')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','🔎 Buscar reportes de pago')+tabBtn('promociones','Promociones')+tabBtn('restaurantes','🍽️ Restaurantes')+tabBtn('turnosrecep','🕐 Turnos recepción')+tabBtn('comidas','🍳 Comidas incluidas')+tabBtn('salones','🏛️ Salones y oficinas')+tabBtn('mantenimiento','Mantenimiento')+tabBtn('policial','🚔 Reporte policial')+tabBtn('marca','🏨 Marca del Hotel')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+'</div></div>';
+    tabBtn('tablero','📋 Tablero del día')+tabBtn('resumen','Resumen')+tabBtn('habitaciones','Habitaciones')+tabBtn('clientes','Clientes')+tabBtn('kardex','Kardex')+tabBtn('tasa','Tasa Bs/$')+(cxcAdminOn()?tabBtn('cxc','💳 CXC'):'')+tabBtn('caja','Caja / Arqueo')+tabBtn('reportes','🔎 Buscar reportes de pago')+tabBtn('promociones','Promociones')+tabBtn('restaurantes','🍽️ Restaurantes')+tabBtn('turnosrecep','🕐 Turnos recepción')+tabBtn('comidas','🍳 Comidas incluidas')+tabBtn('salones','🏛️ Salones y oficinas')+tabBtn('mantenimiento','Mantenimiento')+tabBtn('policial','🚔 Reporte policial')+tabBtn('marca','🏨 Marca del Hotel')+tabBtn('hotel','Hotel')+tabBtn('impresion','Impresión')+tabBtn('usuarios','Usuarios')+tabBtn('reset','Datos')+tabBtn('guia','📘 Guía de uso')+'</div></div>';
   if(adminTab==='tablero'){ c.innerHTML = html + renderTablero(); return; }
+  if(adminTab==='guia'){ c.innerHTML = html + renderGuiaUso(); return; }
   if(adminTab==='cxc'){ c.innerHTML = html + renderCxC(); return; }
   if(adminTab==='resumen'){
     html += statsBar();
@@ -10827,6 +10896,554 @@ document.addEventListener('beforeunload', function(ev){
 });
 /* Apenas vuelve el internet, intenta subir la cola de una vez */
 window.addEventListener('online', function(){ try{ CLOUD.flushQueue(); }catch(e){} });
+/* ====== TEXTO BASE DE LA GUIA DEL HOTEL ====== */
+function guiaBaseHotel(){
+  var h=hotel()||{};
+  var bits=[];
+  if(String(h.nombre||'').trim()) bits.push(String(h.nombre).trim());
+  if(String(h.whatsapp||'').trim()) bits.push('WhatsApp '+String(h.whatsapp).trim());
+  if(String(h.rif||'').trim()) bits.push('RIF '+String(h.rif).trim());
+  return bits.length?bits.join(' · '):'';
+}
+function hint(extra){
+  var b=guiaBaseHotel();
+  if(extra && String(extra).trim()) return b?(String(extra).trim()+' · '+b):String(extra).trim();
+  return b?b:'Guía general del sistema';
+}
+var _guiaSec=[];
+function gReset(){ _guiaSec=[]; }
+function H(txt, sub){
+  _guiaSec.push('<h3 class="pg-h3">'+txt+'</h3>'+(sub?'<div class="pg-sub">'+sub+'</div>':'')+'<ol class="pg-lista">');
+}
+function P(txt){ _guiaSec.push('<li>'+txt+'</li>'); }
+function FIN(){ _guiaSec.push('</ol>'); }
+function SUB(items){ _guiaSec.push('<ul class="pg-sublista">'+items.map(function(x){return '<li>'+x+'</li>';}).join('')+'</ul>'); }
+function CAJA(cls, txt){ _guiaSec.push('<div class="pg-caja '+cls+'">'+txt+'</div>'); }
+function TABLA(cabec, filas){
+  var h='<table class="pg-tabla"><tr>'+cabec.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr>';
+  filas.forEach(function(f){ h+='<tr>'+f.map(function(c){return '<td>'+c+'</td>';}).join('')+'</tr>'; });
+  _guiaSec.push(h+'</table>');
+}
+function LISTO(){ return _guiaSec.join(''); }
+
+/* textos que comparten varios modulos */
+function gAtajos(){ /*Recepcion y Supervisor*/
+  H('⌨️ Atajos de teclado (solo en la computadora)');
+  P('Los atajos funcionan cuando <b>no</b> estás escribiendo en una casilla. Si el cursor está en una casilla, primero toca fuera de ella.');
+  P('Para ver la lista en pantalla en cualquier momento, toca la tecla <b>?</b>.');
+  TABLA(['Función','Tecla'],[['Tablero del día','T'],['Mapa de habitaciones','M'],['Reservas','R'],['Cobrar','C'],['Caja / Arqueo','J'],['Reporte de pagos','P'],['Clientes','L'],['Kardex / Turno','K'],['Promociones','O'],['CXC','D'],['Ocupación','U'],['Nueva reserva','N'],['Abrir turno','A'],['Cerrar turno','Shift + A'],['Buscar','/'],['Imprimir','Ctrl + P'],['Cerrar ventana','Esc'],['Ver los atajos','?']]);
+  FIN();
+}
+function gTurno(){
+  H('🧾 Tu turno: abrir y cerrar (esto es lo primero del día)');
+  P('<b>Abrir turno:</b> al entrar, la app avisa si no tienes turno abierto. Toca <b>“Abrir mi turno”</b> (o la tecla <b>A</b>). Es obligatorio: sin turno abierto no se cobra ni se hace check-in.');
+  P('<b>Cerrar turno:</b> al terminar tu hora, toca <b>“Cerrar turno”</b> (o <b>Shift + A</b>). La app muestra el corte: lo que entró en efectivo, punto, pago móvil, Zelle y en bolívares.');
+  P('<b>Contar antes de cerrar.</b> Cuenta el efectivo, el punto y el pago móvil. Lo que falte o sobre queda anotado como diferencia en el arqueo.');
+  P('El corte se puede <b>imprimir</b> o <b>enviar a administración</b>. La siguiente persona arranca con la caja que dejó la anterior.');
+  CAJA('pg-warn','⚠️ No se puede tener dos turnos abiertos con el mismo usuario. Si la app lo dice, es tu turno anterior: ciérralo primero.');
+  FIN();
+}
+function gControl(){
+  H('🔢 N° de control de los cobros');
+  P('Cada cobro registrado recibe un <b>Número de control</b>. Es el número que se le da al huésped y con el que se busca después el pago.');
+  P('El número se <b>reserva</b> al empezar el cobro y se <b>confirma</b> al guardarlo, así no se repite ni se salta.');
+  P('Se puede buscar por ese número en <b>Cobrar</b>, en <b>Clientes</b> y en el <b>Kardex</b>.');
+  CAJA('pg-tip','💡 Si un cobro se anula, el número <b>no</b> se devuelve ni se vuelve a usar. Queda anulado con su constancia.');
+  FIN();
+}
+
+/* ====== GUIA 1: RECEPCION (y base para supervisor) ====== */
+function guiaRecepcion(unir){
+  var RO = unir; /* true cuando se arma la de Supervisor */
+  gReset();
+  H('🚪 Lo primero al entrar');
+  P('Escribe tu <b>usuario</b> y tu <b>contraseña</b> y toca <b>Entrar</b>.');
+  P('Arriba a la derecha verás tu <b>nombre</b> y el rol con el que estás entrando.');
+  P((RO?'Si no tienes turno abierto, la app te avisa: ':'La app te avisa si no tienes turno abierto: ')+'toca <b>“Abrir mi turno”</b> antes de cobrar.');
+  P((RO?'Tienes todo lo de Recepción':'Tienes las mismas pantallas que Recepción')+', y además <b>permisos extra</b>: '+(RO?'editar la <b>tasa Bs/$</b>, cambiar el <b>precio de las comidas incluidas</b>, <b>anular cobros</b> en caja si el Master te lo permite, y <b>ver los reportes de Mantenimiento</b>.':'lo que el Master te haya activado.'));
+  P('Los permisos los decide el <b>Master</b>. Si una pestaña no te aparece o un botón te sale bloqueado, no es un error: es que ese permiso está apagado para tu rol.');
+  FIN();
+  gTurno();
+  H('📋 Tablero del día (tecla T)');
+  P('Es la pantalla del resumen: llegadas de hoy, salidas de hoy, habitaciones por limpiar, avisos y pendientes.');
+  P('Toca cualquier aviso para ir directo a donde hay que resolverlo (la llegada, la salida, la cuenta sin pagar…).');
+  P('Los avisos de arriba (la campanita 🔔) avisan: turno abierto, objetos olvidados esperando dueño, cuentas sin pagar, reservas vencidas y objetos vencidos.');
+  FIN();
+  H('🛏️ Mapa de habitaciones (tecla M)');
+  P('Cada cuadro es una habitación y el <b>color</b> dice su estado: verde = libre, rojo = ocupada, naranja = por limpiar, azul = en limpieza, gris = en mantenimiento.');
+  P('Una etiqueta amarilla sobre la habitación (SIN PAGAR o NOCHE NUEVA) avisa que esa cuenta tiene dinero pendiente o que se cumplió una noche más.');
+  P('Toca la habitación para abrir su ficha. Ahí se ve todo junto: huésped, personas, niños, noches, entrada, salida prevista, tarifa, consumos, abonos y el saldo.');
+  P('La misma ficha sirve para <b>libre</b> (hacer check-in o enviar a mantenimiento), <b>ocupada</b> (cobrar, consumos, extender, unir cuenta, check-out y salida) y <b>sucia</b> (marcarla lista si limpieza no lo hizo).');
+  P('Los filtros de arriba (por piso, por tipo, por estado o por número) sirven para encontrar rápido una habitación en un hotel lleno.');
+  CAJA('pg-tip','💡 El botón “🖨️ Imprimir listado de habitaciones” saca la lista de ese momento para entregarla en papel.');
+  FIN();
+  H('✅ Check-in (entrar un huésped)');
+  P('En el mapa, toca la habitación <b>verde (libre)</b>.');
+  P('Escribe la <b>cédula</b> y toca buscar: si el cliente ya existe, la app rellena nombre y teléfono sola. Si es nuevo, se escribe a mano y queda guardado.');
+  P('Revisa o cambia la <b>tarifa por noche</b>, las <b>noches</b> y las <b>personas/niños</b>.');
+  P('Si el huésped viene con <b>plan de comidas</b>, elige el plan y a qué restaurante va cada comida. Si no lo elige ahora, se puede sumar después desde la ficha.');
+  P('Si viene por una <b>empresa</b>, escríbela en la casilla de empresa (opcional).');
+  P('Agrega <b>acompañantes</b> y <b>menores de edad</b> si hay, con sus datos.');
+  P('Si son <b>varias habitaciones</b> a la vez, marca la casilla de agregar otra habitación y escribe los números (ej. 102, 103).');
+  P('Si es una habitación <b>autorizada</b> (cortesía, mitad de precio o a crédito), marca la casilla correspondiente y escribe quién la autoriza y el motivo. Queda en la auditoría y en el corte.');
+  P('Revisa el <b>desglose</b> (tarifa × noches − promoción + comidas) y toca <b>“Confirmar check-in”</b>.');
+  P('Si el huésped paga en ese momento, usa <b>“Cobrar anticipo”</b>; el anticipo entra en la caja de tu turno y <b>no se borra</b> si después se cancela la reserva.');
+  FIN();
+  H('💵 Cobrar la cuenta (tecla C)');
+  P('En <b>Cobrar</b> busca por <b>nombre</b>, <b>cédula</b>, <b>N° de control</b> o <b>N° de habitación</b>, y toca la cuenta que aparece.');
+  P('Ahí ves el detalle: hospedaje, consumos, abonos ya hechos y el <b>saldo</b> que falta por cobrar.');
+  P('Toca <b>“💵 Cobrar ahora”</b>. Elige la forma de pago (efectivo, punto, pago móvil, Zelle, transferencia…) y escribe el monto.');
+  P('Si el huésped paga <b>en partes</b>, se cobra la primera forma de pago y se toca <b>“+ Agregar otra forma de pago”</b> para la segunda.');
+  P('Al guardar, la app da el <b>N° de control</b> y se puede imprimir o enviar el <b>recibo</b>.');
+  P('Si el huésped <b>paga en bolívares</b>, la app usa la <b>tasa</b> del día. Revisa que la tasa esté puesta antes de cobrar.');
+  CAJA('pg-warn','⚠️ Antes de cobrar, mira bien que sea esa habitación y ese huésped. Un cobro a la cuenta equivocada hay que anularlo y lo ve administración.');
+  FIN();
+  H('🚪 Check-out (la salida)');
+  P('Abre la cuenta y toca <b>“🎉 Cobrar y hacer check-out”</b>. Primero cobra todo lo pendiente y después libera la habitación.');
+  P('Si el huésped <b>no debe nada</b>, toca <b>“Check-out sin cobro”</b>.');
+  P('Si se va <b>antes</b> de cumplir las noches pagadas, toca <b>“⏱️ Salida anticipada”</b>: la app recalcula las noches que de verdad se cobran y ajusta el total antes de cerrar.');
+  P('Al hacer el check-out la app puede mandar el <b>mensaje de despedida</b> al huésped por WhatsApp (si el Master lo dejó encendido).');
+  P('La habitación queda <b>por limpiar</b> y se le avisa a Ama de Llaves.');
+  FIN();
+  H('➕ Consumos, estadía y unir cuentas');
+  P('<b>Agregar consumo:</b> abre la ficha y toca “Agregar consumo” o en <b>Cobrar</b> el botón “+ Consumo / cargo”. Cada consumo lleva su propio N° de control.');
+  P('<b>Extender estadía:</b> toca “Extender estadía” en la ficha y escribe las noches extra. El total de la cuenta sube solo.');
+  P('<b>Cambiar de habitación:</b> en la ficha del huésped, elige la habitación nueva. Queda el rastro en la ficha y en el Kardex.');
+  P('<b>Unir cuentas:</b> en la ficha de una habitación ocupada toca <b>“🔗 Unir cuenta”</b> y elige la otra. Una pasa a pagar todo o a cargarle los consumos a la otra. Para deshacerlo, toca <b>“✂️ Separar cuentas”</b>.');
+  P('<b>Corregir nombre/cliente:</b> si se equivocaron de huésped, se corrige desde la cuenta con “✏️ Corregir nombre / cliente”; queda anotado quién lo corrigió.');
+  P('<b>Asignar empresa:</b> si la cuenta la paga una empresa, toca “🏢 Asignar empresa” y elige la empresa.');
+  FIN();
+  H('🧾 Caja / Arqueo (tecla J)');
+  P('Es la caja del día: <b>efectivo en bolívares</b>, <b>efectivo en dólares</b>, punto, pago móvil, Zelle y transferencia, con el equivalente en dólares.');
+  P('Abajo está la lista de <b>movimientos del día</b> con su N° de control. Se puede <b>imprimir</b> o <b>exportar a Excel</b>.');
+  P((RO?'<b>Anular un cobro:</b> puedes anular un cobro mal hecho si el Master te dio ese permiso. Se pide el motivo y queda en la auditoría; el N° de control no se reutiliza.':'<b>Anular un cobro:</b> solo se puede si el Master te dio ese permiso; si no aparece el botón, pídeselo a Supervisión o al Master.'));
+  P('Se puede ver el <b>corte de un turno de recepción</b> ya cerrado con el botón correspondiente, y descargar el corte del día.');
+  P('<b>Registrar cobro manual:</b> para algo suelto fuera de una habitación (un servicio, una multi, una venta). Igual pide forma de pago y da N° de control.');
+  FIN();
+  H('📅 Reservas (tecla R)');
+  P('Toca <b>“➕ Nueva reserva”</b>. Escribe nombre, cédula/teléfono, fechas de entrada y salida.');
+  P('Puedes <b>elegir la habitación</b> al crearla (o varias). Queda el precio amarrado y se ve si la habitación no está libre.');
+  P('Si ya no hay habitación libre, se puede dejar en <b>lista de espera</b>.');
+  P('Cuando llega el huésped, toca <b>“✅ Hacer check-in”</b> en su reserva y se pasa a la habitación.');
+  P('La reserva <b>conserva su N° de control</b> hasta que el huésped entra, se elimina o se marca no show.');
+  P('Se puede <b>enviar el localizador</b> al huésped por WhatsApp o correo, con su número de reserva y sus fechas.');
+  P('<b>No show:</b> si pasó el día de llegada y el huésped nunca vino, toca “🚫 No show (no llegó)”. La reserva se cierra, la habitación queda libre y el <b>anticipo se queda en la caja</b> (no se borra). Si se equivocó, hay “↩️ Quitar no show”.');
+  FIN();
+  H('💳 CXC (deudas a crédito) — tecla D');
+  P('Aquí van las cuentas que se cobran <b>después</b>: empresas o huéspedes con crédito.');
+  P('<b>Enviar una cuenta a CXC:</b> desde la cuenta de la habitación toca <b>“📋 Enviar a CXC”</b>. Pide el monto y a quién se le carga. La habitación queda anotada y el dinero pasa a CXC.');
+  P('<b>Registrar abono:</b> abre la CXC y toca <b>“💵 Registrar abono / pago”</b>. Escribe cuánto pagó, con qué forma de pago y quién lo recibió. El saldo baja solo.');
+  P('Cuando se termina de pagar, se toca <b>“✓ Marcar pagada”</b>. Los abonos y los cargos se pueden ver con “📄 Ver abonos” y “📋 Ver cargos”.');
+  P('Si una cuenta se acreditó por error, se <b>anula</b> (con motivo) y aparece en la lista de Anuladas. Nada se borra.');
+  P('Hay filtros de <b>Pendientes</b>, <b>Cobradas</b>, <b>Vencidas</b> y <b>Anuladas</b>, y un <b>Reporte de morosidad</b> para ver quién está atrasado.');
+  FIN();
+  H('🕐 Kardex / Turno (tecla K)');
+  P('Es el historial de lo que pasó: cobros, cargos, anulaciones, check-in, check-out, cambios de tarifa y de habitación, con <b>hora y quién lo hizo</b>.');
+  P('Sirve para responder “¿quién cobró esto?” o “¿por qué cambió esta cuenta?”.');
+  P('Desde aquí se abre y se cierra el turno, y se imprime el corte del turno.');
+  FIN();
+  H('👤 Clientes (tecla L)');
+  P('La lista de todos los clientes con cédula, teléfono y su saldo si debe algo.');
+  P('Se puede crear, editar, ver su ficha, imprimir y ver todo lo que ha consumido el cliente.');
+  P('El botón de <b>importar lista</b> sirve para cargar muchos clientes desde Excel; hay una plantilla para descargar y llenar.');
+  FIN();
+  H('📊 Reporte de pagos (tecla P)');
+  P('Elige un rango de fechas y la app muestra el total cobrado por cada forma de pago.');
+  P('Se puede ver o descargar el reporte para entregarlo a administración.');
+  FIN();
+  H('🎁 Promociones (tecla O)');
+  P(RO?'Aquí se ven las promociones creadas por el Master y se aplican al hacer check-in o al cambiar el precio de la habitación.':'Aquí se ven las promociones que crea el Master; se aplican al hacer check-in o cambiando la promoción en la ficha de la habitación.');
+  P('Al check-in, el descuento se resta del total automáticamente y se ve en el desglose.');
+  FIN();
+  H('📍 Ocupación por tipo (tecla U)');
+  P('Muestra cuántas habitaciones hay de cada tipo, cuántas están ocupadas, cuántas libres y el % de ocupación. No muestra montos de dinero.');
+  FIN();
+  H('🛏️ Habitaciones (solo si el Master dio permiso)');
+  P('Sirve para crear o editar habitaciones y pisos, y cambiar tipos y precios base.');
+  P('Si no te aparece esta pestaña, ese permiso está apagado.');
+  FIN();
+  H('💱 Tasa Bs/$'+(RO?' (sí puedes cambiarla)':' (solo si el Master dio permiso)'));
+  P('Muestra la tasa del día y el equivalente en bolívares de los montos.');
+  P((RO?'Puedes <b>guardar la tasa a mano</b> o tocar <b>“Traer tasa oficial del BCV”</b>.':'Si puedes cambiarla, guarda la tasa a mano o toca “Traer tasa oficial del BCV”. Si no, la cambia Supervisión o el Master.'));
+  P('La tasa se usa en todos los cobros en bolívares. Cámbiala al empezar el día.');
+  FIN();
+  H('🔧 Mantenimiento'+(RO?'':' (solo si el Master dio permiso)'));
+  P('Se ven los <b>reportes de daño</b> de las habitaciones: las que están en reparación y las ya resueltas.');
+  P('Se puede imprimir el reporte para el equipo de mantenimiento.');
+  P((RO?'El que <b>marca resuelto</b> es el personal de Mantenimiento; desde aquí se consulta.':'Aquí se consulta; el que marca resuelto es Mantenimiento.'));
+  FIN();
+  H('🍳 Comidas incluidas'+(RO?' (solo si el Master dio permiso)':''));
+  P('Aquí se fijan los <b>precios del desayuno, almuerzo y cena</b> que el hotel le paga al restaurante por los huéspedes con plan de comidas.');
+  P('Los <b>restaurantes</b> los crea el Master: aquí solo se eligen, no se escriben nombres a mano.');
+  P('Ese costo se suma a la cuenta del huésped cuando se toca <b>“➕ Sumar el plan de comidas”</b> en la ficha de la habitación.');
+  FIN();
+  H('🚔 Reporte policial');
+  P('Lista de los huéspedes que entraron, con sus datos, para imprimir en la Epson LX-300 o bajar a Excel.');
+  P('Se puede ver el día o un rango de fechas.');
+  P('Si el huésped no tiene destino escrito en su ficha, sale el <b>destino por defecto</b> que configuró el Master.');
+  FIN();
+  H('🧳 Objetos olvidados');
+  P('Lo que Ama de Llaves encuentra en las habitaciones. Se ve el estado de cada objeto: guardado, por vencer, vencido, entregado o desechado.');
+  P('Se puede <b>anotar un objeto</b> desde Recepción (si el huésped devuelve algo o lo encuentra un botones), llamar al huésped y marcar la entrega.');
+  P('Al entregar o desechar, la app <b>pide el nombre</b> de quien lo recibió o de quien lo botó: es la constancia.');
+  P('Ningún objeto se borra nunca.');
+  FIN();
+  H('📲 Enviar mensajes al huésped (WhatsApp y correo)');
+  P('En la ficha del huésped, en la cuenta o en la reserva están los botones de enviar mensaje.');
+  P('Hay tres mensajes listos: <b>bienvenida</b> (al hacer check-in), <b>reserva</b> (con el localizador) y <b>despedida</b> (al hacer check-out).');
+  P('Antes de enviar se puede <b>ver la vista previa</b> con datos de ejemplo, para confirmar que se ve bien.');
+  P('El botón abre WhatsApp con el mensaje escrito; solo falta tocar <b>Enviar</b> en el WhatsApp.');
+  FIN();
+  H('💬 Chat interno');
+  P('El botón de chat (arriba) sirve para hablar entre Recepción, Ama de Llaves y Mantenimiento sin salir de la app.');
+  P('Los mensajes sin leer salen marcados. Se puede volver a la app con “← Volver a la app”.');
+  FIN();
+  H('❓ Cosas que suelen preguntar');
+  P('<b>“No me abre / no me sale el cambio”:</b> espera que la publicación termine y recarga con <b>Ctrl + F5</b> o en una ventana de incógnito.');
+  P('<b>“El chip dice En espera”:</b> no hay internet o el cambio aún no subió. Queda guardado en el equipo y sube cuando vuelva la conexión. <b>No apagues la computadora</b> hasta que diga Guardado.');
+  P('<b>“No me deja cobrar”:</b> revisa que tengas el <b>turno abierto</b>.');
+  P('<b>“Me equivoqué de habitación”:</b> no borres nada; usa “Cambiar de habitación” o pide a Supervisión anular el cobro. Todo queda anotado.');
+  FIN();
+  gControl();
+  gAtajos();
+  return LISTO();
+}
+
+/* ====== GUIA 2: AMA DE LLAVES ====== */
+function guiaHK(){
+  gReset();
+  H('🧹 Lo primero al entrar');
+  P('Escribe tu <b>usuario</b> y <b>contraseña</b> y toca <b>Entrar</b>.');
+  P('Vas a ver tres botones arriba: <b>🛏️ Habitaciones</b>, <b>🏛️ Salones y oficinas</b> y <b>🧳 Objetos olvidados</b>.');
+  P('Lo que puedas tocar lo decide el <b>Master</b>. Si un botón no te aparece, es porque ese permiso está apagado para tu rol.');
+  FIN();
+  H('🛏️ Habitaciones por atender');
+  P('Arriba dice cuántas habitaciones están <b>por limpiar</b> y cuántas son <b>nuevas</b> (🆕 = el huésped salió y hay que limpiarla para volver a venderla).');
+  P('Cada tarjeta muestra el <b>número de habitación</b> y en qué estado está.');
+  P('<b>Iniciar:</b> toca “Iniciar” cuando empiezas a limpiar. La habitación pasa a <b>En limpieza</b> (azul) y Recepción ve que estás en ella.');
+  P('<b>Limpieza hecha:</b> al terminar toca <b>“Marcar lista / Limpieza hecha”</b>. La habitación queda <b>Libre</b> (verde) y Recepción ya la puede vender.');
+  P('<b>Marcar usada:</b> si entras a una habitación ocupada a cambiar toallas o limpiar, toca “Marcar usada” para dejar constancia.');
+  P('<b>Reportar daño:</b> si ves algo roto (un bombillo, el aire, una llave, la ducha), toca <b>“Reportar daño”</b>, escribe qué es y la prioridad. Le llega a Mantenimiento y la habitación pasa a <b>En mantenimiento</b> (gris).');
+  CAJA('pg-warn','⚠️ No marques una habitación como lista si no terminaste. Recepción puede venderla en ese momento y el huésped la encuentra sucia.');
+  FIN();
+  H('🏛️ Salones y oficinas');
+  P('Aquí se ven los salones, oficinas y áreas comunes (reuniones, eventos, oficinas).');
+  P('Cuando un salón se usó, se marca <b>por limpiar</b>; al terminar, se marca <b>limpio</b>.');
+  P('Si algo está dañado, se reporta el daño y el salón pasa a reparación.');
+  P('Los salones los crea o quita el <b>Master</b>; aquí solo se usan y se dejan listos.');
+  FIN();
+  H('🧳 Objetos olvidados (lo más importante de tu área)');
+  P('Cuando encuentran algo en una habitación, se anota <b>en el momento</b>, no cuando se acuerden.');
+  P('Toca <b>“➕ Anotar objeto”</b> y llena:');
+  SUB(['<b>Habitación</b> donde lo encontró.','<b>Dónde exactamente</b> (gaveta, baño, debajo de la cama, armario…).','<b>Descripción</b> con color y marca (ej. “lentes de sol negros Ray-Ban, estuche azul”).','<b>Foto</b> con el celular o la webcam (opcional pero recomendable).','<b>Categoría:</b> normal, valioso o perecedero.']);
+  P('La app pone sola el <b>número del objeto (OBJ-0001, OBJ-0002…)</b>, la fecha y la hora, y busca <b>quién estuvo en esa habitación</b> para saber a quién avisarle.');
+  P('El <b>plazo de guardado</b> sale solo según la categoría: valioso se guarda más tiempo, perecedero (comida, cremas abiertas) se bota primero.');
+  P('La etiqueta con el número se pega al objeto: sin número no se encuentra nada.');
+  P('Arriba sale un aviso con los objetos <b>por vencer</b> y <b>vencidos</b>, para que se sepa qué hay que entregar o botar.');
+  FIN();
+  H('🧳 Entregar o desechar un objeto');
+  P('Cuando el huésped viene por su objeto, se abre la ficha y se toca <b>“✅ Entregar al huésped”</b>. La app pide el <b>nombre y documento de quien lo recibe</b> y quién lo entregó.');
+  P('Si se vence el plazo y nadie lo reclama, se toca <b>“🗑️ Desechar”</b> y se anota <b>quién lo botó</b>.');
+  P('Ningún objeto se borra: entregados y desechados quedan con su constancia, por si reclaman después.');
+  CAJA('pg-tip','💡 Si algo es valioso (joyas, dinero, documentos, pasaporte), avísale a Recepción o a Supervisión para guardarlo en caja fuerte.');
+  FIN();
+  H('💬 Chat interno');
+  P('Con el botón de chat (arriba) puedes escribirle a Recepción o a Mantenimiento sin salir de la app.');
+  P('Sirve para avisar “habitación 203 lista”, “se dañó el aire del 105” o lo que haga falta.');
+  FIN();
+  H('❓ Cosas que suelen preguntan');
+  P('<b>“No me sale la habitación que acabo de limpiar”:</b> revisa que hayas tocado “Limpieza hecha”. Si ya la marcaste y no aparece, recarga con Ctrl + F5.');
+  P('<b>“El chip dice En espera”:</b> el cambio quedó guardado y sube cuando vuelva el internet. No apagues el equipo hasta que diga Guardado.');
+  P('<b>“Me equivoqué y marqué lista una sucia”:</b> avísale a Recepción o Supervisión; ellos pueden volver a ponerla por limpiar.');
+  FIN();
+  return LISTO();
+}
+
+/* ====== GUIA 3: MANTENIMIENTO ====== */
+function guiaMant(){
+  gReset();
+  H('🔧 Lo primero al entrar');
+  P('Escribe tu <b>usuario</b> y <b>contraseña</b> y toca <b>Entrar</b>.');
+  P('Arriba tienes: <b>reportes de daño</b>, la <b>lista de habitaciones</b> y el <b>inventario</b> del departamento.');
+  P('Lo que puedas tocar lo decide el <b>Master</b>.');
+  FIN();
+  H('📋 Reportes de daño');
+  P('Aquí llegan los avisos de Recepción y de Ama de Llaves: “el aire del 105 no enfría”, “el bombillo del baño 202”, “la llave no cierra”.');
+  P('Cada reporte dice la <b>habitación</b>, <b>qué es</b>, la <b>prioridad</b> (alta, media, baja), <b>quién lo reportó</b> y la <b>fecha</b>.');
+  P('Mientras el daño está pendiente, la habitación queda <b>en mantenimiento</b> y Recepción no la puede vender.');
+  P('Cuando lo arreglas, toca <b>“Marcar resuelto”</b>. La habitación pasa a <b>por limpiar</b>, para que Ama de Llaves la deje lista antes de volver a venderla.');
+  P('Se puede <b>imprimir el reporte</b> para trabajar con la lista en la mano.');
+  FIN();
+  H('📦 Inventario del departamento (lo que se usa para reparar)');
+  P('Es el almacén de Mantenimiento: bombillos, pintura, llaves, herramientas, aires, tornillos, cualquier cosa.');
+  P('Los <b>productos los crea el Master</b>: aquí no se inventan nombres, solo se usan.');
+  P('<b>Registrar salida / entrega:</b> cuando sacas algo para un trabajo, se anota qué, cuánto y para qué habitación o salón. El stock baja solo.');
+  P('Si el producto viene por <b>caja, bulto, paquete o rollo</b>, se puede sacar por envase y la app descuenta las unidades sueltas.');
+  P('<b>Entradas:</b> cuando llega mercancía de la ferretería o del proveedor, se anota y sube el stock.');
+  P('Si cuentan y hay diferencia, se corrige con un movimiento y se deja la nota del conteo. <b>Nada se borra:</b> el historial siempre cuadra.');
+  P('Cuando el stock baja del mínimo, la app avisa que hay que comprar.');
+  P('Se puede <b>imprimir el inventario</b> para contar a mano en el almacén.');
+  FIN();
+  H('🛏️ Lista de habitaciones');
+  P('Muestra todas las habitaciones con su estado (libre, ocupada, por limpiar, en limpieza, en mantenimiento) para revisar el hotel.');
+  P('Desde aquí también se puede <b>reportar un daño</b> o pedir limpieza sin depender de Recepción.');
+  FIN();
+  H('💬 Chat interno');
+  P('Con el botón de chat (arriba) se escribe a Recepción o a Ama de Llaves, por ejemplo para avisar “el 105 ya está arreglado”.');
+  FIN();
+  H('❓ Cosas que suelen preguntan');
+  P('<b>“No me deja marcar resuelto”:</b> ese permiso está apagado. Pídeselo al Master.');
+  P('<b>“Saqué un bombillo y el stock no bajó”:</b> revisa que hayas guardado el movimiento. Si no se guardó, hazlo de nuevo.');
+  P('<b>“El chip dice En espera”:</b> el cambio sube cuando vuelva el internet. No apagues el equipo hasta que diga Guardado.');
+  FIN();
+  return LISTO();
+}
+
+/* ====== GUIA 4: ADMINISTRACION ====== */
+function guiaAdm(){
+  gReset();
+  H('📥 Tu trabajo: revisar y descargar (no operar)');
+  P('Entras con tu usuario y contraseña igual que los demás.');
+  P('Tu rol es de <b>solo lectura</b>: aquí se revisan y descargan los <b>cortes de caja</b> y los <b>reportes de pagos</b> que envía Recepción. No se cobra, no se mueve ninguna habitación.');
+  P('Todo lo que hagas queda anotado en la auditoría.');
+  FIN();
+  H('📥 Bandeja de administración');
+  P('Aquí llegan los envíos de Recepción y Supervisión: cortes de caja, reportes de pagos y reportes resumidos.');
+  P('Cada envío se puede <b>ver</b> y <b>descargar</b> para guardarlo o mandarlo a contabilidad.');
+  P('Se puede filtrar por fecha y por tipo de envío para encontrar un corte viejo.');
+  FIN();
+  H('🔎 Buscar reportes de pago');
+  P('Busca un cobro por <b>N° de control</b>, <b>cédula o RIF</b> del cliente y por fechas.');
+  P('Sirve para responder “¿cuándo se cobró esto y quién lo cobró?”.');
+  FIN();
+  H('💳 Reporte de pagos y CXC');
+  P('El <b>reporte de pagos</b> muestra el total cobrado por forma de pago en un rango de fechas.');
+  P('En <b>CXC</b> se ven las cuentas a crédito: pendientes, cobradas, vencidas y anuladas, con su saldo.');
+  P('En <b>👑 Autorizadas</b> salen las habitaciones regaladas o a mitad de precio, quién las autorizó y el motivo.');
+  P('En <b>🍽️ Servicio a la habitación</b> salen los pedidos de comidas a la habitación del mes.');
+  FIN();
+  H('🧾 Cortes y arqueo');
+  P('Se ven los turnos de recepción y sus cortes, y el arqueo del día, sin abrir ni cerrar caja.');
+  P('Si algo no cuadra, se compara con el Kardex y con la lista de movimientos del día.');
+  FIN();
+  H('❓ Cosas que suelen preguntan');
+  P('<b>“No puedo cobrar”:</b> correcto. Administración no cobra; eso lo hace Recepción.');
+  P('<b>“No aparece un corte de ayer”:</b> puede que Recepción no lo haya enviado. Pídelo en el chat interno.');
+  FIN();
+  return LISTO();
+}
+
+/* ====== GUIA 5: DUENO ====== */
+function guiaDueno(){
+  gReset();
+  H('📊 Tu panel: solo mirar');
+  P('Entras con tu usuario y contraseña.');
+  P('Tu rol solo <b>mira los números</b>: ingresos del día y del mes, ocupación y movimientos. No cobra ni cambia nada.');
+  P('Los gráficos sirven para ver cómo va el hotel de un vistazo.');
+  FIN();
+  H('¿Y si necesito hacer algo más?');
+  P('Para operar (cobrar, reservar, configurar) se entra con el usuario <b>Master</b> o con el rol que corresponda.');
+  FIN();
+  return LISTO();
+}
+
+/* ====== GUIA 6: MASTER (configura, no opera) ====== */
+function guiaMaster(){
+  gReset();
+  H('Qué hace el Master (y qué no)');
+  P('El Master configura el hotel: crea usuarios, da permisos, crea habitaciones, tipos, precios, restaurantes, salones, promociones y mensajes.');
+  P('El Master no vende, no cobra, no hace check-in ni mueve habitaciones. Eso lo hace Recepción. Si un día necesitas cobrar desde el Master, se hace con un permiso especial y queda anotado.');
+  P('Todo lo que se cambia queda en la auditoría, con quién, cuándo y desde qué equipo.');
+  FIN();
+  H('Usuarios y permisos (empieza por aquí)');
+  P('En Usuarios se crean las cuentas: usuario, nombre, contraseña y rol.');
+  P('Los roles son: Recepcionista, Supervisor de recepción, Administración (solo revisa), Ama de Llaves, Mantenimiento, Dueño (solo mira) y Master.');
+  P('Debajo de la lista está la tabla de permisos por rol: ahí se prende o apaga cada función (ver el tablero, anular cobros, editar la tasa, ver el reporte policial, unir cuentas, etc.).');
+  P('Lo que esté apagado no aparece para ese rol. Recepción y Supervisión tienen las mismas pantallas por defecto; la diferencia se la das tú desde aquí.');
+  P('La columna de usuarios en línea muestra quién está conectado en ese momento.');
+  FIN();
+  H('Habitaciones, pisos y tipos');
+  P('En Habitaciones se crean los pisos y las habitaciones, con su tipo y su tarifa base.');
+  P('Se puede cambiar el precio, el tipo y el estado de una habitación, y crear pisos nuevos.');
+  P('Ojo: cambiar el estado a mano deja rastro. En el día a día eso lo hace Recepción.');
+  FIN();
+  H('Marca del hotel (el nombre y los mensajes)');
+  P('En Marca del Hotel se pone el nombre del hotel, el eslogan, el RIF, la dirección, el WhatsApp y el correo: eso sale impreso en los recibos y en los mensajes.');
+  P('Se puede poner el logo y los colores del hotel.');
+  P('Ahí mismo están las plantillas de los mensajes de bienvenida, reserva y despedida, con las palabras entre corchetes que se cambian solas ([nombre], [hotel], [habitacion], [localizador], [entrada], [salida], [noches]).');
+  P('Cada plantilla tiene su vista previa con datos de ejemplo, y un botón para volver al mensaje original.');
+  P('Los textos se guardan solos mientras escribes, aunque cambies de pantalla.');
+  P('El botón “Configurar reservas No show” prende o apaga el botón de No show para los demás roles.');
+  FIN();
+  H('Hotel (datos y funcionamiento)');
+  P('En Hotel se configura el funcionamiento general: moneda, formas de pago, horarios de salida, planes de comida, autorizadas, CXC, etc.');
+  P('Aquí se prende o apaga cada función grande del sistema (CXC, habitaciones autorizadas, comidas incluidas…).');
+  FIN();
+  H('Restaurantes y comidas incluidas');
+  P('En Restaurantes se crea la lista de restaurantes del hotel. Nada de nombres quemados: si un restaurante cambia de nombre o cierra, se edita o se borra aquí y la app usa la lista nueva.');
+  P('En Comidas incluidas se fija el precio del desayuno, almuerzo y cena y qué restaurante entra por defecto.');
+  P('Ese precio es lo que se suma a la cuenta del huésped que tiene plan de comidas.');
+  FIN();
+  H('Salones y oficinas');
+  P('Aquí se agregan, renombran y quitan los salones y oficinas (salón de eventos, sala de reuniones, oficina 1…).');
+  P('Igual que con los restaurantes: nada escrito en el código. Recepción los cobra, Ama de Llaves los limpia y Mantenimiento los repara.');
+  FIN();
+  H('Turnos de recepción');
+  P('Aquí se crean los turnos del día (mañana, tarde, noche…) con su hora de entrada y de salida.');
+  P('Cada empleado abre su turno al entrar y lo cierra al salir, y la app calcula el corte de ese turno.');
+  FIN();
+  H('Promociones');
+  P('Se crean las promociones: nombre, descuento en porcentaje y desde/hasta cuándo vale.');
+  P('Se pueden activar y desactivar; Recepción las aplica en el check-in o en la ficha de la habitación.');
+  FIN();
+  H('Tasa Bs/Dólar');
+  P('Aquí se fija la tasa del día: a mano o trayendo la oficial del BCV.');
+  P('La tasa se usa en todos los cobros en bolívares, así que conviene revisarla al empezar el día.');
+  FIN();
+  H('Impresión y recibos');
+  P('Aquí se ajusta el tamaño de letra y los textos que salen en los recibos y en los reportes que se imprimen.');
+  FIN();
+  H('Mantenimiento e inventario');
+  P('Se ven los reportes de daño de las habitaciones y se imprimen.');
+  P('En el inventario el Master crea los productos (nombre, unidad, si viene por caja o bulto y el mínimo para que avise cuando hay que comprar). El movimiento del día lo hace Mantenimiento.');
+  FIN();
+  H('Tablero del día, Resumen y Kardex');
+  P('En el Master son para mirar: cómo está el hotel, qué está ocupado, qué se movió y quién lo movió.');
+  P('Si necesitas resolver algo de la operación, entra Recepción.');
+  FIN();
+  H('CXC y reportes');
+  P('Se ve lo que se debe, lo cobrado, lo vencido y lo anulado, y se puede corregir o anular con motivo.');
+  P('Los pagos anulados no se borran: quedan con su constancia.');
+  FIN();
+  H('Datos: respaldo, restaurar y reiniciar');
+  P('Descargar respaldo: guarda todo (habitaciones, clientes, pagos, usuarios, configuración) en un archivo en tu computadora. Hazlo seguido; la app te avisa cuando toca.');
+  P('Subir respaldo y restaurar: devuelve el sistema a como estaba en ese archivo. Reemplaza los datos actuales, así que hazlo con cuidado.');
+  P('Reiniciar habitaciones y reportes: deja las habitaciones en Libre y borra los reportes, pero conserva clientes, empresas, pagos y configuración.');
+  P('Borrar todo y empezar de cero: borra absolutamente todo, aquí y en la nube. Pide tu contraseña de Master y no se puede deshacer. Descarga un respaldo antes.');
+  FIN();
+  H('Estas guías: cómo editarlas');
+  P('Cada módulo tiene su pestaña “Guía de uso” al final. El Master puede editarlas.');
+  P('Entra a la guía, toca “Editar esta guía” y escribe. Se guarda por módulo.');
+  P('Si te equivocas, toca “Volver al texto original” y la guía vuelve a como la dejó el fabricante.');
+  P('Cuando se actualice la app, las guías se actualizan y lo que tú hayas escrito se conserva.');
+  FIN();
+  H('Cosas que suelen preguntan');
+  P('“Un empleado no ve una pestaña”: revisa los permisos de su rol en Usuarios.');
+  P('“Cambié un precio y no se ve”: recarga con Ctrl + F5; el cambio puede estar publicándose.');
+  P('“Quiero cambiar el nombre de un restaurante”: hazlo en Restaurantes; no hay nombres escritos en el código.');
+  FIN();
+  return LISTO();
+}
+
+/* ====== PESTAÑA "GUIA DE USO" (motor) ====== */
+function guiaDe(rol){
+  try{
+    if(rol==='recepcion') return guiaRecepcion(false);
+    if(rol==='supervisor') return guiaRecepcion(true);
+    if(rol==='housekeeping') return guiaHK();
+    if(rol==='mantenimiento') return guiaMant();
+    if(rol==='administracion') return guiaAdm();
+    if(rol==='dueno') return guiaDueno();
+    return guiaMaster();
+  }catch(e){
+    return '<div class="pg-caja pg-warn">No se pudo cargar la guía en este momento. Recarga la página con Ctrl + F5.</div>';
+  }
+}
+function esModuloGuia(rol){
+  return rol==='recepcion'||rol==='supervisor'||rol==='housekeeping'||rol==='mantenimiento'||rol==='administracion'||rol==='dueno'||rol==='master'||rol==='admin';
+}
+function guiaTerminosTexto(html){
+  return String(html||'').replace(/<li>/g,'\n- ').replace(/<\/(h3|li|div|tr)>/g,'\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&amp;/g,'&').replace(/\n{3,}/g,'\n\n').trim();
+}
+function guiaEtiqueta(rol){
+  var m={recepcion:'Recepción',supervisor:'Supervisor de recepción',housekeeping:'Ama de Llaves',mantenimiento:'Mantenimiento',administracion:'Administración',dueno:'Dueño',master:'Master / Configuración'}
+  return m[rol]||'Módulo';
+}
+function renderGuiaUso(){
+  var s=session()||{};
+  var rol=s.rol||'recepcion';
+  var et=guiaEtiqueta(rol);
+  var h=hotel()||{};
+  var g=h.guias||{};
+  var propio=g[rol];
+  var conPropio=!!(propio && String(propio).trim());
+  var yo=esMaster(rol);
+  var hh='';
+  hh+='<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px">';
+  hh+='<div class="section-title" style="margin:0">📘 Guía de uso · '+esc(et)+'</div>';
+  hh+='<div style="flex:1"></div>';
+  hh+='<button class="btn-primary" onclick="imprimirGuiaUso()">🖨️ Imprimir / guardar en PDF</button>';
+  if(yo && !conPropio) hh+='<button class="btn-ghost" onclick="guiaEditar()">✏️ Editar esta guía</button>';
+  hh+='</div>';
+  var b=guiaBaseHotel();
+  hh+='<div style="font-size:12.5px;color:#8893a5;margin:0 0 14px;line-height:1.6">Todo lo que hace este módulo, paso por paso.'+(b?(' · '+esc(b)):'')+(conPropio?' · <b style="color:#b45309">texto propio de la empresa</b>':'')+'</div>';
+  if(conPropio){
+    hh+='<div style="background:#fff8ec;border:1px solid #ffd59a;border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:13px;color:#8a5200;line-height:1.6">✏️ Esta guía fue <b>editada desde el panel</b> y no el texto original del sistema.'+(yo?' <a href="#" onclick="guiaRestaurar();return false" style="color:#0d3b66;font-weight:700">↩️ Volver al texto original</a>':'')+'</div>';
+  }
+  hh+='<div class="pg-doc">'+guiaDe(rol)+'</div>';
+  return hh;
+}
+/* --- Editor de la guia (solo Master) --- */
+var _guiaEditRol=null;
+function guiaEditar(rol){
+  var s=session()||{};
+  if(!esMaster(s.rol)){ alert('Solo el Master puede editar las guías.'); return; }
+  var r=rol||s.rol;
+  _guiaEditRol=r;
+  var h=hotel()||{};
+  var g=h.guias||{};
+  var txt=(g[r] && String(g[r]).trim())?String(g[r]):guiaTerminosTexto(guiaDe(r));
+  var html='<div class="section-title" style="margin-top:0">✏️ Editar la guía · '+esc(guiaEtiqueta(r))+'</div>';
+  html+='<p style="font-size:13px;color:#55637a;line-height:1.6;margin:0 0 10px">Escribe la guía como quieras. Cada línea con guion al principio sale como viñeta, y las líneas que empiezan con <b>#</b> salen como título. Se guarda solo para este módulo y se ve igual a todos los que entren con ese rol.</p>';
+  html+='<textarea id="guia-txt" style="width:100%;box-sizing:border-box;min-height:420px;font-size:13.5px;line-height:1.65;padding:12px 14px;border-radius:12px;border:1.5px solid #dbe3ef;font-family:inherit">'+esc(txt)+'</textarea>';
+  html+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">';
+  html+='<button class="btn-primary" onclick="guiaGuardar()">💾 Guardar esta guía</button>';
+  html+='<button class="btn-ghost" onclick="cerrarModal()">Cancelar</button>';
+  if(g[r] && String(g[r]).trim()) html+='<button class="btn-ghost" style="color:#b45309" onclick="guiaRestaurar(true)">↩️ Volver al texto original</button>';
+  html+='</div>';
+  showModal(html);
+}
+function guiaGuardar(){
+  var s=session()||{};
+  if(!esMaster(s.rol)){ alert('Solo el Master puede editar las guías.'); return; }
+  var el=document.getElementById('guia-txt'); if(!el) return;
+  var txt=String(el.value||'');
+  var r=_guiaEditRol||s.rol;
+  var h=hotel()||{};
+  h.guias=h.guias||{};
+  h.guias[r]=txt;
+  saveHotel(h);
+  cerrarModal();
+  render();
+}
+function guiaRestaurar(dentroModal){
+  var s=session()||{};
+  if(!esMaster(s.rol)){ return; }
+  if(!confirm('¿Volver la guía a como viene de fábrica? Lo que hayas escrito en este módulo se pierde.')) return;
+  var r=(dentroModal && _guiaEditRol)?_guiaEditRol:s.rol;
+  var h=hotel()||{};
+  if(h.guias){ delete h.guias[r]; saveHotel(h); }
+  if(dentroModal){ cerrarModal(); }
+  render();
+}
+function imprimirGuiaUso(){
+  var s=session()||{};
+  var rol=s.rol||'recepcion';
+  var et=guiaEtiqueta(rol);
+  var html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Guía de uso · '+esc(et)+'</title>';
+  html+='<style>*{font-family:Arial,Helvetica,sans-serif;box-sizing:border-box}body{margin:0;padding:32px;color:#1c2430;font-size:12.5px;line-height:1.65}h1{font-size:19px;color:#0d3b66;margin:0}h2{font-size:12.5px;color:#667;font-weight:400;margin:5px 0 16px}h3{font-size:14px;color:#0d3b66;margin:22px 0 6px;border-bottom:1px solid #dbe3ef;padding-bottom:4px}ol{margin:0;padding-left:20px}ul{margin:4px 0;padding-left:18px}li{margin-bottom:5px}.pg-caja{border-radius:8px;padding:9px 12px;margin:8px 0;font-size:12px}.pg-warn{background:#fff4e5;border:1px solid #ffd59a;color:#8a5200}.pg-tip{background:#eaf7ee;border:1px solid #bfe6cb;color:#1f6b35}.pg-tabla{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}th,td{border:1px solid #ccd;padding:5px 8px;text-align:left}th{background:#eef3fa;color:#44526a}@media print{body{padding:0}h3{break-after:avoid}}@page{margin:14mm}</style></head><body>';
+  html+='<h1>'+esc(hotelNombre())+' · Guía de uso · '+esc(et)+'</h1>';
+  html+='<h2>Impreso el '+new Date().toLocaleString('es-VE')+'</h2>';
+  html+='<div class="pg-doc">'+guiaDe(rol)+'</div>';
+  html+='<div style="margin-top:26px;font-size:11px;color:#8893a5">Documento de apoyo interno. No se entrega al huésped.</div>';
+  html+='</body></html>';
+  var w=window.open('','_blank');
+  if(!w){ alert('Permite las ventanas emergentes para poder imprimir la guía.'); return; }
+  w.document.write(html); w.document.close(); w.focus();
+  setTimeout(function(){ try{ w.print(); }catch(e){} },500);
+}
+
+
 bootstrap();
 </script>
 </body>
