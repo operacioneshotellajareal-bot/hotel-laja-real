@@ -261,7 +261,7 @@ const SB_APP_EMAIL = 'operador@hotellajareal.com';
 const SB_APP_PASS  = 'LajaReal2026-Caja';
 /* Cajas de datos que se comparten entre todos los equipos.
    OJO: 'session' NO se comparte (cada equipo inicia sesión aparte). */
-const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos','forzarCierre','enviosAdmin','chat','chatLeidos','cxc','restaurantes','turnosRecepcion','comidasPrecios','objetosOlvidados'];
+const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','kardex','tasa','hotel','metodosPago','pagoControl','tiposHab','preciosTipo','permisos','presencia','impresion','reservas','promos','forzarCierre','enviosAdmin','chat','chatLeidos','cxc','restaurantes','turnosRecepcion','comidasPrecios','objetosOlvidados','policialDestino'];
 
 /* ====== AHORRO DE DATOS (egreso) ======
    Varias cajas casi nunca cambian (tipos de habitacion, metodos de pago,
@@ -270,7 +270,7 @@ const SYNC_KEYS = ['rooms','users','clientes','pagos','reportes','turnos','karde
    OJO: para que el ahorro funcione, SIEMPRE hay que guardar con
    DB.save(nombre, lista) (no DB.set) cuando se agregue o quite algo de una
    lista, porque asi se entera de que esa caja cambio de verdad. */
-const SYNC_CASI_FIJAS = ['tiposHab','metodosPago','preciosTipo','permisos','turnosRecepcion','comidasPrecios','restaurantes','hotel','impresion','promos','objetosOlvidados','forzarCierre'];
+const SYNC_CASI_FIJAS = ['tiposHab','metodosPago','preciosTipo','permisos','turnosRecepcion','comidasPrecios','restaurantes','hotel','impresion','promos','objetosOlvidados','forzarCierre','policialDestino'];
 const SYNC_HUELLA = 'hotel__huellaSync';
 function _huellaDe(k){
   try{ const raw=localStorage.getItem('hotel_'+k); if(raw===null) return null; return raw.length+'_'+raw.length; }catch(e){ return null; }
@@ -1656,7 +1656,7 @@ function pmLeer(prefix){
   const metodoStr=lineas.map(l=>{ let s=l.metodo; if(lineas.length>1) s+=' ('+fmtUSD(l.montoUsd)+')'; if(l.ref) s+=' [Ref: '+l.ref+']'; return s; }).join(' + ');
   return {ok:true, metodos:lineas, metodoStr:metodoStr, totalUsd:suma};
 }
-function updateRoom(num, patch){ const r=rooms(); const i=r.findIndex(x=>x.num===num); r[i]=Object.assign(r[i],patch); saveRooms(r); }
+function updateRoom(num, patch){ const r=rooms(); const i=r.findIndex(x=>Number(x.num)===Number(num)); if(i<0) return; r[i]=Object.assign(r[i],patch); saveRooms(r); }
 function countBy(est){ return rooms().filter(r=>r.estado===est).length; }
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -1905,6 +1905,7 @@ function roomCard(r){
 }
 function saldoDeHab(r){
   if(!r || r.estado!=='ocupada') return 0;
+  try{ return saldoCuentaHab(r); }catch(e){}
   const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r);
   const cons=cargosDe(r).filter(c=>!c.pagado).reduce((s,c)=>s+Number(c.montoUsd||0),0);
   const ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
@@ -3117,7 +3118,10 @@ function abrirHab(num){
     body += '<div class="field" style="flex:1"><label>Niños</label><div style="margin-top:4px">'+(r.ninos||0)+'</div></div>';
     body += '<div class="field" style="flex:1"><label>Noches</label><div style="margin-top:4px">'+(r.noches||1)+'</div></div></div>';
     var _oacs=acompDe(r); if(_oacs.length){ body += '<div class="field"><label>'+(_oacs.length===1?'Acompañante':'Acompañantes ('+_oacs.length+')')+'</label><div style="margin-top:4px">'+_oacs.map(function(a){return esc((a.nombre||'(sin nombre)')+(a.docNum?(' · '+docLabel(a.docTipo)+' '+a.docNum):''));}).join('<br>')+'</div></div>'; }
-    body += '<button class="btn-ghost" style="margin:2px 0 10px" onclick="agregarAcompPost('+num+')">➕ Agregar acompañante</button>';
+    body += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 10px"><button class="btn-ghost" onclick="agregarAcompPost('+num+')">➕ Agregar acompañante</button>';
+    if(puedeUnirCuenta()) body += '<button class="btn-ghost" onclick="unirCuentaModal('+num+')">🔗 Unir cuenta</button>';
+    body += '</div>';
+    try{ body += cuentaUnidaBox(r); }catch(e){}
     var _omen=menoresDe(r); if(_omen.length){ body += '<div class="field"><label>🧒 '+(_omen.length===1?'Menor de edad':'Menores de edad ('+_omen.length+')')+'</label><div style="margin-top:4px">'+_omen.map(function(m){return esc(((m.nombre||'')+' '+(m.apellido||'')).trim()||'(sin nombre)')+' · Folio '+esc(m.folio||'—');}).join('<br>')+'</div></div>'; }
     body += '<div class="field"><label>Entrada</label><div style="margin-top:4px">'+(r.checkin||'—')+'</div></div>';
     body += '<div class="field"><label>Salida prevista</label><div style="margin-top:4px">'+(r.salida?fechaDDMMYYYY(r.salida):'—')+'</div></div>';
@@ -3144,6 +3148,13 @@ function abrirHab(num){
     }catch(e){}
     /* fin comidas */
     const cgs = cargosDe(r);
+    var _cms=[]; try{ _cms=cargosACuenta(r).filter(function(x){ return Number(x.hab||0)!==Number(num) && !x.pagado; }); }catch(e){ _cms=[]; }
+    if(_cms.length){
+      body += '<div class="section-title" style="font-size:14px;margin-top:8px">Consumos de otros cuartos en esta cuenta</div>';
+      body += '<table class="users-table"><tr><th>De la habitacion</th><th>Tipo</th><th>Detalle</th><th>Monto</th></tr>';
+      _cms.forEach(function(cg){ body += '<tr><td><b>Hab. '+esc(String(cg.habOriginal||cg.hab||'-'))+'</b></td><td>'+esc(cg.tipo||'')+'</td><td>'+esc(cg.desc||'-')+'</td><td>'+fmtUSD(cg.montoUsd)+'</td></tr>'; });
+      body += '</table><div style="text-align:right;font-size:13px;color:#55637a;margin:6px 0">Compartidos: <b>'+fmtUSD(_cms.reduce(function(a,x){ return a+Number(x.montoUsd||0); },0))+'</b></div>';
+    }
     if(cgs.length){
       body += '<div class="section-title" style="font-size:14px;margin-top:8px">Consumos en la cuenta</div>';
       body += '<table class="users-table"><tr><th>Tipo</th><th>Detalle</th><th>N° Control</th><th>Monto</th><th>Estado</th><th></th></tr>';
@@ -3431,6 +3442,10 @@ function agregarAcompPost(num){
   h+='<p style="font-size:12.5px;color:#55637a;margin:2px 0 12px">Para cuando un acompañante llega después del check-in. Se suma a la habitación y al registro del huésped.</p>';
   h+='<div style="display:flex;gap:8px"><input id="ap-nombre" class="inp" style="flex:1" placeholder="Nombre"><input id="ap-apellido" class="inp" style="flex:1" placeholder="Apellido"></div>';
   h+='<div style="display:flex;gap:8px;margin-top:8px"><select id="ap-doctipo" class="inp" style="flex:0 0 150px">'+docTipoOptions('V')+'</select><input id="ap-docnum" class="inp" style="flex:1" placeholder="Número de documento"></div>';
+  h+='<div class="field" style="margin-top:10px"><label>¿Sus consumos a quién se le cargan?</label><select id="ap-paga">';
+  h+='<option value="'+num+'">A la cuenta de Hab. '+num+' (la suya)</option>';
+  try{ rooms().filter(function(x){ return x.estado==='ocupada'; }).forEach(function(x){ if(Number(x.num)!==Number(num)) h+='<option value="'+x.num+'">A la cuenta de Hab. '+x.num+' · '+esc(x.huesped||'')+'</option>'; }); }catch(e){}
+  h+='</select><div style="font-size:12px;color:#8893a5;margin-top:3px">Si lo pide otra persona (por ejemplo Pedro de la 301), elige la habitación de esa persona y todo lo que consuma este acompañante entra en su cuenta.</div></div>';
   h+='<div style="display:flex;gap:10px;margin-top:16px"><button class="btn-gray" style="flex:1" onclick="cerrarModal()">Cancelar</button><button class="btn-green" style="flex:2" onclick="guardarAcompPost('+num+')">Agregar acompañante</button></div>';
   showModal(h);
   try{ var f=document.getElementById('ap-nombre'); if(f) f.focus(); }catch(e){}
@@ -3446,8 +3461,13 @@ function guardarAcompPost(num){
   if(!dn){ alert('Escribe el número de documento del acompañante (obligatorio para el registro).'); return; }
   var nombreCompleto=(nom+' '+ape).trim();
   var acs=Array.isArray(r.acompanantes)?r.acompanantes.slice():[];
-  acs.push({nombre:nombreCompleto, docTipo:dt, docNum:dn});
+  var _paga=0; try{ var _pe=document.getElementById('ap-paga'); if(_pe && _pe.value) _paga=parseInt(_pe.value)||0; }catch(e){}
+  var _acId='ac'+Date.now();
+  acs.push({id:_acId, nombre:nombreCompleto, docTipo:dt, docNum:dn, hab:num, pagaHab:(_paga&&_paga!==Number(num))?_paga:0});
   updateRoom(num,{acompanantes:acs, personas:(parseInt(r.personas)||1)+1});
+  if(_paga && _paga!==Number(num)){
+    try{ logKardex('cuenta',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Acompañante '+nombreCompleto+' cargará sus consumos a la Hab. '+_paga, montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
+  }
   if(r.clienteId) registrarAcompanante(r.clienteId, {nombre:nombreCompleto, docTipo:dt, docNum:dn, hab:num});
   try{ logKardex('acompanante', {hab:num, num:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Acompañante agregado después del check-in: '+nombreCompleto+' · '+docLabel(dt)+' '+dn, montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
   cerrarModal(); render(); abrirHab(num);
@@ -3912,7 +3932,8 @@ function confirmCheckout(num){
     }
   }catch(e){ _desp=null; }
   limpiarAutorizacionHab(num);
-  updateRoom(num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, creditoCxc:false, creditoCxcId:'', creditoCxcControl:0, control:0, plan:'solo', planRest:{}, comidaincTotal:0, tramos:[], tramosCobro:undefined});
+  updateRoom(num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, creditoCxc:false, creditoCxcId:'', creditoCxcControl:0, control:0, plan:'solo', planRest:{}, comidaincTotal:0, tramos:[], tramosCobro:undefined, cuentaCon:0, cuentaModo:'', cuentaPor:'', cuentaFecha:''});
+  try{ soltarCuentasDeHab(num); }catch(e){}
   cerrarModal(); render();
   if(_desp) checkoutMensajeModal(_desp);
 }
@@ -3983,28 +4004,130 @@ function cobrarYCheckout(num, btn){
   confirmCheckout(num);
 }
 /* ====== CONSUMOS, COBRO SIN CHECK-OUT, LIMPIEZA Y CAMBIO DE HAB. ====== */
+/* ====== CUENTAS UNIDAS (unir cuentas despues del check-in) ======
+   Regla de oro: la cuenta se queda SIEMPRE en el cuarto que se ve en el
+   registro de habitaciones (r.cuentaCon). Los otros cuartos solo tienen un
+   letrero que apunta al cuarto dueño de la cuenta.
+   - 'paga'      : la cuenta de este cuarto se cobra y se muestra en el cuarto
+                   que se eligio (Pedro paga lo de la 302 o del amigo).
+   - 'compartida': el cuarto paga su propio hospedaje, y sus consumos entran a
+                   la cuenta de otro cuarto.
+   Nada se mueve de un cuarto a otro: asi no se puede duplicar ni perder plata. */
+
+function cuentaDeHab(r){                       /* 'otro' = este cuarto carga a otro, 'yo' = aqui vive la cuenta */
+  if(!r || !r.cuentaCon) return 'yo';
+  const due=findRoom(r.cuentaCon);
+  if(!due || due.estado!=='ocupada' || Number(due.cuentaCon||0)===Number(r.num)) return 'yo';
+  return (r.cuentaModo==='compartida')?'otro':'paga';
+}
+function cuartosQuePaganA(r){                  /* el cuarto dueño + los que cargan a el */
+  if(!r) return [];
+  const yo=cuentaDeHab(r)==='yo';
+  const num=Number(r.num);
+  return rooms().filter(x=>{
+    if(x.estado!=='ocupada') return false;
+    if(yo) return Number(x.num)===num || Number(x.cuentaCon||0)===num;
+    return Number(x.num)===Number(r.cuentaCon);
+  });
+}
+function dueCargo(cg, r){
+  if(cg && cg.hab && findRoom(cg.hab)) return cg.hab;
+  if(cg && cg.habOriginal && findRoom(cg.habOriginal)) return cg.habOriginal;
+  return r?r.num:0;
+}
+/* Traduce un consumo al cuarto que lo tiene que cobrar. Es la pieza que evita
+   que un consumo compartido se cobre dos veces o se pierda. */
+function cargoParaCuenta(cg, r){
+  if(!cg || !r) return cg;
+  if(cg.dueno) return cg;                       /* ya es de otro cuarto */
+  const d=cuentaDeHab(r);
+  if(d==='otro'){
+    return Object.assign({}, cg, {dueno:r.cuentaCon, cuentaModo:'compartida', hab:r.cuentaCon, habOriginal:Number(cg.habOriginal||r.num)});
+  }
+  if(d==='paga'){
+    const base=String(cg.id||'').split('_')[0];
+    return Object.assign({}, cg, {id:base+'_'+r.num, dueno:r.cuentaCon, hab:r.cuentaCon, habOriginal:Number(cg.habOriginal||r.num)});
+  }
+  return cg;
+}
+/* Cargos propios: los que nacieron aqui o que se cargaron a nombre de un
+   acompanante de este cuarto (esos si van a la cuenta del cuarto donde esta ese
+   acompanante). Lo que va a otra cuenta ya viene traducido con 'dueno'. */
+function cargosPropios(r){
+  const prods=[];
+  cargosDe(r).forEach(cg=>{
+    if(cg.dueno) return;
+    if(cg.acompId){
+      const otro=rooms().find(x=>String(x.estado)==='ocupada' && x.num!==r.num && (Array.isArray(x.acompanantes)?x.acompanantes:[]).some(a=>a&&a.id===cg.acompId));
+      if(otro) return;
+    }
+    prods.push(cg);
+  });
+  return prods;
+}
+function cargosACuenta(r){
+  const out=[]; const vistos={};
+  cuartosQuePaganA(r).forEach(q=>{ cargosDe(q).forEach(cg=>{ const c2=cargoParaCuenta(cg,q); if(vistos[c2.id]) return; vistos[c2.id]=1; out.push(c2); }); });
+  return out;
+}
+/* Paquete de cuenta listo para cobrar: totales y de cada cuarto. */
+function datosCuentaHab(r){
+  if(!r) return null;
+  const lista=cuartosQuePaganA(r);
+  const porHab=[]; let hospT=0, consT=0, habT=0;
+  const cgs=cargosACuenta(r);
+  lista.forEach(q=>{
+    const noches=nochesHab(q), hosp=brutoHab(q), d=descUsd(q);
+    const cons=cgs.filter(x=>!x.pagado && Number(x.hab||0)===Number(q.num)).reduce((a,x)=>a+Number(x.montoUsd||0),0);
+    const ab=(Array.isArray(q.abonos)?q.abonos:[]).reduce((a,x)=>a+abonoCuentaUsd(x,q),0);
+    hospT+=(hosp-d); habT+=ab; consT+=cons;
+    porHab.push({r:q, noches:noches, hosp:hosp, d:d, cons:cons, ab:ab, neto:Math.max(0,(hosp-d)+cons-ab)});
+  });
+  const compartidos=cgs.filter(x=>!x.pagado && Number(x.hab||0)!==Number(r.num));
+  return { raiz:r, list:lista, porHab:porHab, cargos:cgs, compartidos:compartidos, tot:hospT+consT, abo:habT, saldo:Math.max(0,hospT+consT-habT), nochesTot:porHab.reduce((a,x)=>a+x.noches,0) };
+}
+function saldoCuentaHab(r){ const d=datosCuentaHab(r); return d?d.saldo:0; }
+function habsExtraCuenta(r){ const l=cuartosQuePaganA(r); return l.length?l.filter(x=>Number(x.num)!==Number(r.num)).map(x=>x.num).join(', '):''; }
+function textoCuentaCon(r){
+  if(!r || !r.cuentaCon) return '';
+  const d=findRoom(r.cuentaCon);
+  const quien=d?((d.huesped||('Hab. '+d.num))):('Hab. '+r.cuentaCon);
+  if(cuentaDeHab(r)==='otro') return '🔗 Cuenta de la Hab. '+r.cuentaCon+' · '+quien;
+  return '🔗 Paga también la Hab. '+r.cuentaCon+' · '+quien;
+}
+function sumaCta(r, arr, key){ return (Array.isArray(arr)?arr:[]).reduce((a,x)=>a+Number(x[key]||0),0); }
+function abonosDeCuenta(r){
+  const out=[]; cuartosQuePaganA(r).forEach(q=>{ (Array.isArray(q.abonos)?q.abonos:[]).forEach(a=>{ if(abonoCuentaUsd(a,q)>0) out.push(a); }); });
+  return out;
+}
+function abonosCuentaUsd(r){ return abonosDeCuenta(r).reduce((a,x)=>a+Number(x.montoUsd||0),0); }
 function cargosDe(r){ return Array.isArray(r.cargos)?r.cargos:[]; }
 function restaurantes(){ const r=DB.get('restaurantes',null); return (Array.isArray(r)&&r.filter(x=>String(x).trim()).length)?r.filter(x=>String(x).trim()):['Restaurante 1','Restaurante 2']; }
 function saveRestaurantes(a){ DB.save('restaurantes', (a||[]).map(x=>String(x).trim()).filter(Boolean)); }
 function controlDeCargo(cg){ if(cg&&cg.control) return cg.control; if(cg&&cg.id){ var m=kardexAll().find(function(k){ return k.tipo==='cargo' && k.cargoId===cg.id && k.control; }); if(m) return m.control; } return null; }
 function totalCargosPend(r){ return cargosDe(r).filter(c=>!c.pagado).reduce((s,c)=>s+Number(c.montoUsd||0),0); }
+function totalConsumosCuenta(r){ var D=null; try{ D=datosCuentaHab(r); }catch(e){} return D?D.cons:totalCargosPend(r); }
 /* [CUENTA] Cuadre sencillo de la cuenta de la habitacion: lo que debe y lo que ya pago.
    Sale el mismo numero que en el tablero y en Cobrar (saldoDeHab). */
 function cuentaHabBox(r){
   if(!r || r.estado!=='ocupada') return '';
-  var hosp=brutoHab(r)-descUsd(r);
-  var cons=totalCargosPend(r);
-  var ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,a){ return s+abonoCuentaUsd(a,r); },0);
-  var costo=hosp+cons;
-  var saldo=Math.max(0,costo-ab);
-  var noches=nochesHab(r);
+  var D=null; try{ D=datosCuentaHab(r); }catch(e){ D=null; }
+  var hosp, cons, ab, costo, saldo, noches;
+  if(D){ hosp=D.tot-D.cons-D.ab; cons=D.cons; ab=D.abo; costo=D.tot; saldo=D.saldo; noches=D.nochesTot; }
+  else { hosp=brutoHab(r)-descUsd(r); cons=totalCargosPend(r); ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce(function(s,a){ return s+abonoCuentaUsd(a,r); },0); costo=hosp+cons; saldo=Math.max(0,costo-ab); noches=nochesHab(r); }
   var h='<div style="background:#f3f6fb;border:1px solid #dbe4f1;border-radius:10px;padding:11px 13px;margin-top:8px">';
-  h+='<div style="font-weight:800;color:var(--azul);font-size:13.5px;margin-bottom:6px">🧾 Cuenta de la habitación</div>';
-  h+='<div style="display:flex;justify-content:space-between;font-size:13px;color:#44526a"><span>Hospedaje ('+noches+' noche'+(noches===1?'':'s')+(descUsd(r)>0.009?', con promoción':'')+')</span><span>'+fmtUSD(hosp)+'</span></div>';
-  if(cons>0.009) h+='<div style="display:flex;justify-content:space-between;font-size:13px;color:#44526a;margin-top:2px"><span>Consumos pendientes</span><span>'+fmtUSD(cons)+'</span></div>';
-  if(ab>0.009) h+='<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--verde);margin-top:2px"><span>Pagos / adelantos recibidos</span><span>− '+fmtUSD(ab)+'</span></div>';
+  h+='<div style="font-weight:800;color:var(--azul);font-size:13.5px;margin-bottom:6px">Cuenta de la habitacion</div>';
+  if(D && D.list.length>1){
+    D.porHab.forEach(function(x){
+      h+='<div style="display:flex;justify-content:space-between;font-size:12.5px;color:#44526a;margin-bottom:2px"><span>Hab. '+esc(String(x.r.num))+' - '+esc(x.r.huesped||'-')+'</span><span>'+fmtUSD(Math.max(0,x.hosp-x.d+x.cons-x.ab))+'</span></div>';
+    });
+    h+='<div style="height:1px;background:#dbe4f1;margin:6px 0"></div>';
+  }
+  h+='<div style="display:flex;justify-content:space-between;font-size:13px;color:#44526a"><span>Hospedaje ('+noches+' noche'+(noches===1?'':'s')+(descUsd(r)>0.009?', con promocion':'')+')</span><span>'+fmtUSD(hosp)+'</span></div>';
+  if(cons>0.009) h+='<div style="display:flex;justify-content:space-between;font-size:13px;color:#44526a;margin-top:2px"><span>Consumos pendientes'+(D&&D.compartidos.length?' (incluye los cargados por otro cuarto)':'')+'</span><span>'+fmtUSD(cons)+'</span></div>';
+  if(ab>0.009) h+='<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--verde);margin-top:2px"><span>Pagos / adelantos recibidos</span><span> - '+fmtUSD(ab)+'</span></div>';
   h+='<div style="display:flex;justify-content:space-between;font-weight:800;font-size:15px;margin-top:6px;border-top:1px solid #dbe4f1;padding-top:6px;color:'+(saldo>0.009?'#a23b3b':'#1d6b38')+'"><span>'+(saldo>0.009?'Falta por pagar':'Cuenta pagada')+'</span><span>'+fmtUSD(saldo)+'</span></div>';
-  if((ab-costo)>0.009) h+='<div style="font-size:12px;color:#1d6b38;margin-top:4px">A favor del huésped: '+fmtUSD(ab-costo)+'</div>';
+  if((ab-costo)>0.009) h+='<div style="font-size:12px;color:#1d6b38;margin-top:4px">A favor del huesped: '+fmtUSD(ab-costo)+'</div>';
   h+='</div>';
   return h;
 }
@@ -4016,6 +4139,14 @@ function agregarCargoModal(num){
   body+='<div class="field" id="cg-rest-box"><label>🍽️ ¿De cuál restaurante?</label><select id="cg-rest">'+restaurantes().map(n=>'<option>'+esc(n)+'</option>').join('')+'</select></div>';
   body+='<div class="field"><label>Descripción (opcional)</label><input id="cg-desc" placeholder="ej: almuerzo, 3 camisas"></div>';
   body+='<div class="field"><label>Monto (USD)</label><input id="cg-monto" type="number" min="0" step="0.01" value="0" oninput="cgPrev()"></div>';
+  try{
+    var _rg=findRoom(num); var _acs=(_rg&&Array.isArray(_rg.acompanantes))?_rg.acompanantes:[];
+    if(_acs.length){
+      body+='<div class="field"><label>Quien consumio (opcional)</label><select id="cg-acomp"><option value="">- A nombre del huesped -</option>';
+      _acs.forEach(function(a){ body+='<option value="'+escA(a.id||'')+'">'+esc(a.nombre||'Acompanante')+'</option>'; });
+      body+='</select><div style="font-size:12px;color:#8893a5;margin-top:3px">Si el que consumio carga a la cuenta de otro cuarto, el cargo entra en la cuenta de ese cuarto.</div></div>';
+    }
+  }catch(e){}
   body+='<div id="cg-prev" style="font-size:13px;color:#55637a;margin-top:-4px">Equivale a '+fmtBs(0)+'</div>';
   body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="guardarCargo('+num+')">Agregar a la cuenta</button><button class="btn-ghost" onclick="abrirHab('+num+')">Cancelar</button></div>';
   showModal(body);
@@ -4029,11 +4160,13 @@ function guardarCargo(num){
   if(monto<=0){ alert('Escribe un monto mayor a 0'); return; }
   const esComida=(tipo==='Comida'||tipo==='Minibar');
   const restEl=document.getElementById('cg-rest'); const rest=(esComida&&restEl)?restEl.value:'';
-  const r=findRoom(num); const cargos=cargosDe(r).slice();
+  const r=findRoom(num); const cargos=cargosDe(r).map(function(x){ return (x&&!x.hab)?Object.assign({},x,{hab:num,habOriginal:num}):x; });
   const _cgId='cg'+Date.now();
+  var _acompId=''; try{ var _ae=document.getElementById('cg-acomp'); if(_ae) _acompId=_ae.value||''; }catch(e){}
+  var _acNom=''; if(_acompId){ var _aa=(Array.isArray(r.acompanantes)?r.acompanantes:[]).find(function(x){ return x && x.id===_acompId; }); if(_aa) _acNom=_aa.nombre||''; }
   const _cgCtrl=siguienteControl(); /* cada cargo del día lleva su propio N° de control (así estaban los recibos viejos) */
   function _ligaCargosCtrl(_ids,_c){ if(!_ids||!_ids.length||!_c) return; const _l=cargosDe(findRoom(num)).map(function(x){ return _ids.indexOf(x.id)>=0?Object.assign({},x,{control:(x.control||_c),controlPago:_c}):x; }); updateRoom(num,{cargos:_l}); }
-  cargos.push({id:_cgId, tipo:tipo, desc:desc, montoUsd:monto, restaurante:rest, fecha:new Date().toISOString(), pagado:false, control:_cgCtrl});
+  cargos.push({id:_cgId, tipo:tipo, desc:(_acNom?('['+_acNom+'] '+(desc||'')):desc), montoUsd:monto, restaurante:rest, fecha:new Date().toISOString(), pagado:false, control:_cgCtrl, acompId:_acompId, hab:num, habOriginal:num});
   updateRoom(num,{cargos:cargos, ocultarCobrar:false});
   logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:_cgId, control:_cgCtrl, detalle:tipo+(rest?(' · '+rest):'')+(desc?' · '+desc:'')+' · '+fmtUSD(monto)+' · N° control '+fmtControl(_cgCtrl), restaurante:rest, cargoTipo:tipo, cargoUsd:monto, cargoBs:precioBs(monto), montoUsd:0, montoBs:0, metodo:''});
   abrirHab(num);
@@ -6054,6 +6187,15 @@ function renderAdmin(){
   } else if(adminTab==='mantenimiento'){
     html += '<div class="section-title" style="font-size:15px;margin-top:0">Mantenimiento · Reportes</div>' + mantenimientoBody(true);
   } else if(adminTab==='policial'){
+    html += '<div style="background:#fff;padding:16px 18px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:16px;max-width:640px">';
+    html += '<div class="section-title" style="font-size:15px;margin-top:0">Destino por defecto del reporte policial</div>';
+    html += '<p style="font-size:13px;color:#55637a;margin:0 0 12px;line-height:1.6">Este destino sale <b>solo</b> en la columna “Destino” cuando el huésped <b>no tiene un destino escrito en su ficha</b>. Si en la ficha del huésped se escribe otro destino, sale ese. Se usa igual en la pantalla, en la impresión y en el Excel.</p>';
+    html += '<div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">';
+    html += '<div class="field" style="flex:1;min-width:200px;margin:0"><label>Destino</label><input id="pol-dest-def" value="'+escA(polDestinoDefecto())+'" placeholder="ej: Bolívar"></div>';
+    html += '<button class="btn-primary" style="padding:9px 14px" onclick="polGuardarDestinoDefecto()">Guardar</button>';
+    html += '</div>';
+    html += (polDestinoDefecto()?'<div style="font-size:12px;color:#2e7d32;margin-top:10px">Ahora mismo se usa: <b>'+esc(polDestinoDefecto())+'</b></div>':'<div style="font-size:12px;color:#b45309;margin-top:10px">Ahora mismo está vacío: a los huéspedes sin destino les saldrá “—”.</div>');
+    html += '</div>';
     html += renderPolicialSeguro();
   } else if(adminTab==='restaurantes'){
     html += renderRestaurantesAdmin();
@@ -6355,6 +6497,20 @@ function _polDiaDe(iso){ return String(iso==null?'':iso).slice(0,10); }
 function _polDiaLocal(ts){ try{ const d=new Date(ts); if(isNaN(d.getTime())) return _polDiaDe(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }catch(e){ return _polDiaDe(ts); } }
 function docSigla(t){ return {V:'V',E:'E',P:'P',J:'J',G:'G'}[String(t||'').toUpperCase()]||''; }
 function docCorto(tipo,num){ var s=docSigla(tipo); return (s&&num)?(s+'-'+num):String(num||''); }
+/* Destino por defecto del reporte policial (lo configura el Master).
+   Si el huésped tiene su propio destino en la ficha, manda el del huésped. */
+function polDestinoDefecto(){
+  let v='';
+  try{ v = DB.get('policialDestino',''); }catch(e){ v=''; }
+  if(v && typeof v==='object') v = v.valor||'';
+  return String(v==null?'':v).trim();
+}
+function polGuardarDestinoDefecto(){
+  const el = document.getElementById('pol-dest-def');
+  const v = (el && el.value!=null)? String(el.value).trim() : polDestinoDefecto();
+  DB.set('policialDestino', v);
+  try{ if(typeof render==='function') render(); }catch(e){}
+}
 function polRegistros(){
   // Toma los check-ins del kardex (cada huésped que entró) y cruza con la habitación y el cliente.
   const todos = kardexAll().filter(k=>k.tipo==='checkin');
@@ -6369,6 +6525,7 @@ function polRegistros(){
     const r = findRoom(k.hab);
     const c = (k.clienteId?clientes().find(x=>x.id===k.clienteId):null) || null;
     let entrada = '', salida = '', nom = k.huesped||'', doc='', edad='', ec='', prof='', proc='', dest='', pais='';
+    const destDef = polDestinoDefecto();
     if(c){
       nom = (c.tipo==='empresa'? (c.nombre||'') : ((c.nombre||'')+' '+(c.apellido||'')).trim()) || nom;
       doc = c.docNum?docCorto(c.docTipo,c.docNum):'';
@@ -6377,6 +6534,7 @@ function polRegistros(){
     // entrada/salida desde la habitación (histórico del kardex no las guarda, se toman de la room si sigue)
     if(r){ entrada = r.checkin||''; salida = r.salida||''; }
     if(!entrada && c && Array.isArray(c.historial)){ const h=c.historial.find(x=>x.hab===k.hab); if(h){ entrada = h.entrada?fechaDDMMYYYY(_polDiaDe(h.entrada)):''; salida = h.salida?fechaDDMMYYYY(_polDiaDe(h.salida)):''; } }
+    if(!String(dest==null?'':dest).trim()) dest = destDef;   // sin destino propio: el que puso el Master
     filas.push({ ts:k.ts, dia:String(dia==null?'':dia), hab:String(k.hab==null?'':k.hab), nom:String(nom==null?'':nom), doc:String(doc==null?'':doc), edad:String(edad==null?'':edad), ec:String(ec==null?'':ec), prof:String(prof==null?'':prof), proc:String(proc==null?'':proc), dest:String(dest==null?'':dest), pais:String(pais==null?'':pais), entrada:String(entrada==null?'':entrada), salida:String(salida==null?'':salida) });
   });
   filas.sort((a,b)=> new Date(a.ts)-new Date(b.ts));
@@ -6988,11 +7146,13 @@ function cobrarMatchRooms(q){
 }
 function saldoGrupo(list){
   let gCost=0,gAb=0;
-  list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); const cons=cargosDe(r).filter(x=>!x.pagado).reduce((s,x)=>s+Number(x.montoUsd||0),0); const ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0); gCost+=(hosp-d+cons); gAb+=ab; });
+  list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); let cons=cargosDe(r).filter(x=>!x.pagado).reduce((s,x)=>s+Number(x.montoUsd||0),0); let ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
+    try{ if(cuentaDeHab(r)==='yo'){ const D=datosCuentaHab(r); cons=D.cons; ab=D.abo; } }catch(e){}
+    gCost+=(hosp-d+cons); gAb+=ab; });
   return Math.max(0,gCost-gAb);
 }
 function ocultarPagadosCobrar(){
-  const ocup=rooms().filter(r=>r.estado==='ocupada');
+  const ocup=rooms().filter(r=>r.estado==='ocupada' && r.cuentaCon);
   const groups={}; ocup.forEach(r=>{ const k=r.tituId||r.clienteId||('h:'+(r.huesped||r.num)); (groups[k]=groups[k]||[]).push(r); });
   let n=0;
   Object.keys(groups).forEach(k=>{ const list=groups[k]; if(saldoGrupo(list)<=0.009){ list.forEach(r=>{ updateRoom(r.num,{ocultarCobrar:true}); n++; }); } });
@@ -7003,7 +7163,10 @@ function cobrarPintar(){
   const q=cobrarQ; const matches=cobrarMatchRooms(q);
   if(!matches.length){ cont.innerHTML='<div class="empty">'+(q?'No se encontró ninguna habitación ocupada con “'+esc(q)+'”.':'No hay habitaciones ocupadas en este momento.')+'</div>'; return; }
   const groups={}; const order=[];
-  matches.forEach(r=>{ const k=r.tituId||r.clienteId||('h:'+(r.huesped||r.num)); if(!groups[k]){ groups[k]=[]; order.push(k); } groups[k].push(r); });
+  matches.forEach(r=>{ let k=r.tituId||r.clienteId||('h:'+(r.huesped||r.num));
+    if(cuentaDeHab(r)!=='yo') k='cta:'+r.cuentaCon;
+    else if(cuartosQueCarganA(r).length) k='cta:'+r.num;
+    if(!groups[k]){ groups[k]=[]; order.push(k); } groups[k].push(r); });
   const gs = order.map(k=>{ const list=groups[k].sort((a,b)=>a.num-b.num); const saldo=saldoGrupo(list); return {list:list, pagado:saldo<=0.009}; });
   const visibles = gs.filter(g=> !(g.pagado && g.list.every(r=>r.ocultarCobrar)) );
   visibles.sort((a,b)=>(a.pagado?1:0)-(b.pagado?1:0));
@@ -7016,14 +7179,20 @@ function cobrarPintar(){
     const c=_gTitu?clientes().find(x=>x.id===_gTitu):null;
     const nombre=(c?((c.nombre||'')+' '+(c.apellido||'')).trim():'')||first.huesped||'Huésped';
     const numsStr=list.map(r=>r.num).join(',');
+    let _numsCta=numsStr;
+    try{ if(cuentaDeHab(first)!=='yo' || cuartosQueCarganA(first).length){ _numsCta=cuartosQuePaganA(first).map(function(x){return x.num;}).join(','); } }catch(e){}
     let gCost=0,gAb=0;
-    list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); const cons=cargosDe(r).filter(x=>!x.pagado).reduce((s,x)=>s+Number(x.montoUsd||0),0); const ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0); gCost+=(hosp-d+cons); gAb+=ab; });
+    list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); let cons=cargosDe(r).filter(x=>!x.pagado).reduce((s,x)=>s+Number(x.montoUsd||0),0); let ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
+      try{ if(cuentaDeHab(r)==='yo'){ const D=datosCuentaHab(r); cons=D.cons; ab=D.abo; } }catch(e){}
+      gCost+=(hosp-d+cons); gAb+=ab; });
     const gSaldo=Math.max(0,gCost-gAb); const pagado=gSaldo<=0.009;
     h+='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:16px 18px;margin-bottom:14px">';
     h+='<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:flex-start">';
     h+='<div><div style="font-weight:800;color:var(--azul);font-size:17px">'+esc(nombre)+'</div>';
     if(c&&c.docNum) h+='<div style="font-size:12.5px;color:#8893a5;margin-top:2px">'+esc(docLabel(c.docTipo)||'Documento')+' '+esc(c.docNum)+'</div>';
-    h+='<div style="font-size:12.5px;color:#55637a;margin-top:2px">'+(list.length>1?('Cuenta combinada · '+list.length+' habitaciones ('+esc(numsStr)+')'):('Habitación '+esc(numsStr)))+'</div></div>';
+    const _uni=(cuentaDeHab(first)!=='yo' || cuartosQueCarganA(first).length>0);
+    const _unidos=_uni?(cuartosQuePaganA(first).map(function(x){return x.num;}).join(' + ')):numsStr;
+    h+='<div style="font-size:12.5px;color:#55637a;margin-top:2px">'+(_uni?('🔗 Cuenta unida · Hab. '+esc(_unidos)):(list.length>1?('Cuenta combinada · '+list.length+' habitaciones ('+esc(numsStr)+')'):('Habitación '+esc(numsStr))))+'</div></div>';
     h+='<div>'+(pagado?'<span style="background:#e9f8ee;color:#1d6b38;border:1px solid #9fdcb4;border-radius:999px;padding:4px 12px;font-size:12.5px;font-weight:800">✓ PAGADO</span>':'<span style="background:#fff4e5;color:#9a6a00;border:1px solid #f3c96b;border-radius:999px;padding:4px 12px;font-size:12.5px;font-weight:800">SIN PAGAR</span>')+'</div>';
     h+='</div>';
     list.forEach(r=>{
@@ -7052,13 +7221,13 @@ function cobrarPintar(){
     h+='<div style="display:flex;justify-content:space-between;font-weight:800;color:'+(pagado?'var(--verde)':'var(--azul)')+';font-size:18px"><span>'+(pagado?'Saldo (todo pagado)':'Saldo por cobrar')+'</span><span>'+fmtUSD(gSaldo)+' · '+fmtBs(precioBs(gSaldo))+'</span></div>';
     h+='</div>';
     h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">';
-    if(!pagado) h+='<button class="btn-green" style="padding:9px 16px" onclick="cobrarCuentaModal(\''+numsStr+'\')">💵 Cobrar ahora</button>';
-    if(!pagado) h+='<button class="btn-orange" style="padding:9px 16px" onclick="enviarACxCModal(\''+numsStr+'\')">📋 Enviar a CXC</button>';
-    h+='<button class="btn-red" style="padding:9px 16px" onclick="checkoutCuenta(\''+numsStr+'\')">🚪 Hacer check-out (salida)</button>';
-    h+='<button class="btn-ghost" style="padding:9px 16px" onclick="corregirNombreGrupoModal(\''+numsStr+'\')">✏️ Corregir nombre / cliente</button>';
-    h+='<button class="btn-ghost" style="padding:9px 16px" onclick="asigEmpCuentaModal(\''+numsStr+'\')">🏢 Asignar empresa</button>';
-    h+='<button class="btn-ghost" style="padding:9px 16px" onclick="salidaRegistrarAnticipada(\''+numsStr+'\')">⏱️ Salida anticipada</button>';
-    h+='<button class="btn-primary" style="padding:9px 16px" onclick="imprimirReciboGrupo(\''+numsStr+'\')">🖨️ Recibo / PDF</button>';
+    if(!pagado) h+='<button class="btn-green" style="padding:9px 16px" onclick="cobrarCuentaModal(\''+_numsCta+'\')">💵 Cobrar ahora</button>';
+    if(!pagado) h+='<button class="btn-orange" style="padding:9px 16px" onclick="enviarACxCModal(\''+_numsCta+'\')">📋 Enviar a CXC</button>';
+    h+='<button class="btn-red" style="padding:9px 16px" onclick="checkoutCuenta(\''+_numsCta+'\')">🚪 Hacer check-out (salida)</button>';
+    h+='<button class="btn-ghost" style="padding:9px 16px" onclick="corregirNombreGrupoModal(\''+_numsCta+'\')">✏️ Corregir nombre / cliente</button>';
+    h+='<button class="btn-ghost" style="padding:9px 16px" onclick="asigEmpCuentaModal(\''+_numsCta+'\')">🏢 Asignar empresa</button>';
+    h+='<button class="btn-ghost" style="padding:9px 16px" onclick="salidaRegistrarAnticipada(\''+_numsCta+'\')">⏱️ Salida anticipada</button>';
+    h+='<button class="btn-primary" style="padding:9px 16px" onclick="imprimirReciboGrupo(\''+_numsCta+'\')">🖨️ Recibo / PDF</button>';
     h+='</div>';
     h+='</div>';
   });
@@ -7104,11 +7273,147 @@ function cobroGrupoDatos(numsStr){
   const nums=String(numsStr).split(',').map(n=>parseInt(n)).filter(n=>!isNaN(n));
   const list=nums.map(findRoom).filter(r=>r&&r.estado==='ocupada');
   let tot=0, abo=0, nochesTot=0; const porHab=[];
-  list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); const cons=cargosDe(r).filter(x=>!x.pagado).reduce((s,x)=>s+Number(x.montoUsd||0),0); const ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0); const neto=hosp-d+cons; tot+=neto; abo+=ab; nochesTot+=noches; porHab.push({r:r, noches:noches, hosp:hosp, d:d, cons:cons, ab:ab, neto:Math.max(0,neto-ab)}); });
+  list.forEach(r=>{ const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r); let cons=cargosDe(r).filter(x=>!x.pagado).reduce((s,x)=>s+Number(x.montoUsd||0),0); let ab=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
+    try{ if(cuentaDeHab(r)==='yo'){ const D=datosCuentaHab(r); cons=D.cons; ab=D.abo; } }catch(e){}
+    const neto=hosp-d+cons; tot+=neto; abo+=ab; nochesTot+=noches; porHab.push({r:r, noches:noches, hosp:hosp, d:d, cons:cons, ab:ab, neto:Math.max(0,neto-ab)}); });
   let _tituId=''; list.forEach(function(r){ if(r.tituId) _tituId=r.tituId; }); if(!_tituId) _tituId=(list[0]||{}).clienteId||'';
   const _titu=_tituId?clientes().find(function(x){return x.id===_tituId;}):null;
   const _tituNombre=_titu?(((_titu.nombre||'')+' '+(_titu.apellido||'')).trim()):((list[0]||{}).huesped||'');
   return { nums:nums, list:list, tot:tot, abo:abo, nochesTot:nochesTot, saldo:Math.max(0,tot-abo), porHab:porHab, tituId:_tituId, titu:_titu||null, tituNombre:_tituNombre };
+}
+/* Arma el paquete de cobro cuando la habitacion tiene una cuenta unida
+   (ella paga a otros cuartos o ella carga a otro). Deja la misma forma que
+   cobroGrupoDatos para que el cobro, el recibo y el CXC sigan igual. */
+function datosCobroCuentaHab(r){
+  const D=datosCuentaHab(r); if(!D) return null;
+  const lista=D.list.slice().sort((a,b)=>a.num-b.num);
+  const raiz=findRoom(D.raiz.num)||D.raiz;
+  const extra=D.list.filter(x=>Number(x.num)!==Number(D.raiz.num)).map(x=>x.num);
+  const ti=raiz.tituId||raiz.clienteId||''; const tc=ti?clientes().find(x=>x.id===ti):null;
+  return { nums:lista.map(x=>Number(x.num)), list:[raiz], porHab:D.porHab, tot:D.tot, abo:D.abo, saldo:D.saldo, nochesTot:D.nochesTot,
+    tituId:ti, titu:tc||null, tituNombre:tc?clienteNombre(tc):(raiz.huesped||''),
+    cuentas:lista.map(x=>({raiz:x.num, list:[x.num]})), compartidos:D.compartidos, habsExtra:extra, uni:true };
+}
+
+/* ====== PANTALLA PARA UNIR CUENTAS (Recepcion y Master) ====== */
+function _cxpued(cod){ try{ if(typeof puede==='function' && puede(cod)) return true; }catch(e){} try{ var ss=session(); return !!(ss && (ss.esMaster||ss.rol==='master'||ss.rol==='admin')); }catch(e){ return false; } }
+function puedeUnirCuenta(){ return _cxpued('unirCuenta'); }
+function unirCuentaModal(numOrigen){
+  if(!puedeUnirCuenta()){ alert('No tienes permiso para unir cuentas.'); return; }
+  if(typeof guardTurno==='function' && guardTurno()) return;
+  const a=findRoom(numOrigen);
+  if(!a || a.estado!=='ocupada'){ alert('Esa habitación no está ocupada.'); return; }
+  const otras=rooms().filter(x=>x.estado==='ocupada' && Number(x.num)!==Number(numOrigen));
+  let body='<button class="close" onclick="cerrarModal()">×</button>';
+  body+='<h2>🔗 Unir cuenta</h2>';
+  body+='<div class="rstate" style="color:#55637a">Hab. '+numOrigen+' · '+esc(a.huesped||'—')+'</div>';
+  body+='<div style="background:#eef3fb;border:1px solid #c9d8ee;border-radius:10px;padding:11px 13px;font-size:12.8px;color:#2a4a73;line-height:1.6;margin-bottom:12px">Las habitaciones <b>siguen siendo dos</b> (cada una con su salida, su limpieza y su registro policial). Lo que se une es <b>el dinero</b>: se cobra un solo total y sale un solo comprobante.</div>';
+  body+='<div class="field"><label>¿Qué pasa con esta cuenta?</label><select id="uc-modo">';
+  body+='<option value="paga">Esta habitación PAGA lo de la otra (un solo cobro)</option>';
+  body+='<option value="compartida">El hospedaje lo paga esta, pero los CONSUMOS entran a la otra cuenta</option>';
+  body+='</select></div>';
+  body+='<div class="field"><label>¿Con cuál habitación?</label><select id="uc-otra">';
+  if(!otras.length) body+='<option value="">No hay otras habitaciones ocupadas</option>';
+  otras.forEach(x=>{ body+='<option value="'+x.num+'">Hab. '+x.num+' · '+esc(x.huesped||'—')+' · debe '+fmtUSD(saldoDeHab(x))+'</option>'; });
+  body+='</select></div>';
+  if(!otras.length){ body+='<div style="font-size:12.5px;color:#b5651d;margin-bottom:10px">Solo se puede unir con habitaciones ocupadas. Si el amigo todavía no tiene habitación, primero hazle el check-in.</div>'; }
+  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="unirCuentaConfirm('+numOrigen+')">Unir la cuenta</button><button class="btn-ghost" onclick="abrirHab('+numOrigen+')">Cancelar</button></div>';
+  showModal(body);
+}
+function unirCuentaConfirm(numOrigen){
+  const oe=document.getElementById('uc-otra'); const me=document.getElementById('uc-modo');
+  const otra=oe?parseInt(oe.value):0; const modo=(me&&me.value==='compartida')?'compartida':'paga';
+  if(!otra){ alert('No hay otra habitación ocupada para unir.'); return; }
+  const res=unirCuentas(numOrigen, otra, modo);
+  if(!res.ok){ alert(res.msg); return; }
+  cerrarModal(); render();
+  alert('Cuenta unida.\n\n'+res.txt);
+  abrirHab(numOrigen);
+}
+function unirCuentas(numOrigen, numOtra, modo){
+  let a=findRoom(numOrigen), b=findRoom(numOtra);
+  const _a0=a, _b0=b;              /* copia de antes: findRoom/updateRoom pueden cambiar el objeto */
+  const nA=d=>Number((d&&d.num)||0), nB=d=>Number((d&&d.cuentaCon)||0);
+  if(!a || !b) return {ok:false, msg:'No se encontraron las habitaciones.'};
+  if(a.estado!=='ocupada' || b.estado!=='ocupada') return {ok:false, msg:'Las dos habitaciones tienen que estar ocupadas.'};
+  if(Number(numOrigen)===Number(numOtra)) return {ok:false, msg:'Son la misma habitación.'};
+  if(cuentaDeHab(_a0)!=='yo' || cuentaDeHab(_b0)!=='yo') return {ok:false, msg:'Una de las dos habitaciones ya está unida a otra cuenta. Primero suéltala desde "Cuentas unidas".'};
+  const por=(session()&&session().nombre)||'';
+  const sello={cuentaPor:por, cuentaFecha:new Date().toISOString()};
+  if(modo==='compartida'){
+    updateRoom(numOrigen, Object.assign({cuentaCon:Number(numOtra), cuentaModo:'compartida'}, sello));
+  } else {
+    /* quien paga no debe tener ya consumos propios, o tendria dos bloques de cuenta */
+    const propios=cargosPropios(_b0).filter(c=>!c.pagado);
+    if(propios.length) return {ok:false, msg:'La Hab. '+numOtra+' tiene consumos propios en su cuenta ('+fmtUSD(propios.reduce((x,c)=>x+Number(c.montoUsd||0),0))+').\n\nHazlo al revés: elige que la Hab. '+numOtra+' pague todo, o mueve esos consumos. Así no se cobra ni se pierde nada dos veces.'};
+    updateRoom(numOtra, Object.assign({cuentaCon:Number(numOrigen), cuentaModo:'paga'}, sello));
+  }
+  a=findRoom(numOrigen)||a; b=findRoom(numOtra)||b;
+  try{ logKardex('cuenta',{hab:numOrigen, huesped:a.huesped||'', clienteId:a.clienteId||'', detalle:'🔗 Unió las cuentas de Hab. '+numOrigen+' y Hab. '+numOtra+' ('+(modo==='compartida'?('los consumos de la '+numOrigen+' entran a la '+numOtra):('la '+numOrigen+' paga todo'))+') por '+(por||'—'), montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
+  try{ logKardex('cuenta',{hab:numOtra, huesped:b.huesped||'', clienteId:b.clienteId||'', detalle:'🔗 Cuenta unida con Hab. '+numOrigen+' ('+(modo==='compartida'?'recibe los consumos de la '+numOrigen:'paga el total')+') por '+(por||'—'), montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
+  return {ok:true, txt:(modo==='compartida'
+    ? ('Hab. '+numOrigen+' paga su hospedaje y sus consumos entran a la cuenta de la Hab. '+numOtra+'.')
+    : ('Desde ahora la cuenta de la Hab. '+numOtra+' se cobra junto con la Hab. '+numOrigen+'. Sigue viendo cada habitación por separado.'))};
+}
+function soltarCuentasDeHab(num){
+  /* deshace el letrero de un cuarto y tambien el de los cuartos que apuntaban a el */
+  rooms().forEach(x=>{
+    if(Number(x.num)===Number(num) && x.cuentaCon){ updateRoom(x.num,{cuentaCon:0, cuentaModo:''}); }
+    if(Number(x.cuentaCon||0)===Number(num) && x.cuentaCon){ updateRoom(x.num,{cuentaCon:0, cuentaModo:''}); }
+  });
+}
+function separarCuenta(num){
+  if(!puedeUnirCuenta()){ alert('No tienes permiso para separar cuentas.'); return; }
+  const r=findRoom(num); if(!r) return;
+  if(!confirm('¿Separar esta cuenta de las demás?\n\nCada habitación vuelve a tener su cuenta por separado. No se borra ningún consumo ni pago.')) return;
+  const por=(session()&&session().nombre)||'';
+  const tocados=[];
+  rooms().forEach(x=>{
+    if(Number(x.num)===Number(num) && x.cuentaCon){ tocados.push(Number(x.num)); }
+    if(Number(x.cuentaCon||0)===Number(num)){ tocados.push(Number(x.num)); }
+  });
+  soltarCuentasDeHab(num);
+  try{ logKardex('cuenta',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'✂️ Separó las cuentas unidas de Hab. '+num+(tocados.length?(' (también la Hab. '+tocados.join(', ')+')'):'')+' por '+(por||'—'), montoUsd:0, montoBs:0, metodo:''}); }catch(e){}
+  cerrarModal(); render();
+  alert('Cuentas separadas. Cada habitación vuelve a su cuenta.');
+}
+function cuentaUnidaBox(r){
+  if(!r || r.estado!=='ocupada') return '';
+  const D=datosCuentaHab(r);
+  let h='';
+  if(D.list.length>1){
+    h+='<div style="background:#eef3fb;border:1px solid #c9d8ee;border-radius:10px;padding:10px 12px;margin:8px 0;font-size:12.6px;color:#2a4a73">';
+    h+='<div style="font-weight:800;margin-bottom:4px">🔗 Cuenta unida</div>';
+    D.list.forEach(x=>{ h+='<div>Hab. '+esc(String(x.num))+' · '+esc(x.huesped||'—')+' · debe '+fmtUSD(Math.max(0,(brutoHab(x)-descUsd(x))+D.cargos.filter(function(c){ return !c.pagado && Number(c.hab||0)===Number(x.num); }).reduce(function(a,c){ return a+Number(c.montoUsd||0); },0)-(Array.isArray(x.abonos)?x.abonos:[]).reduce(function(a,y){ return a+abonoCuentaUsd(y,x); },0)))+'</div>'; });
+    h+='<div style="margin-top:6px;font-weight:800">Total de la cuenta: '+fmtUSD(D.saldo)+'</div>';
+    if(r.cuentaPor) h+='<div style="color:#667;margin-top:3px">Unida por '+esc(r.cuentaPor)+(r.cuentaFecha?(' · '+esc(String(r.cuentaFecha).slice(0,10))):'')+'</div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">';
+    if(puedeUnirCuenta()) { h+='<button class="btn-ghost" style="padding:6px 11px" onclick="separarCuenta('+r.num+')">✂️ Separar cuentas</button>'; }
+    h+='<button class="btn-green" style="padding:6px 11px" onclick="cobrarCuentaModal(\''+r.num+'\')">💵 Cobrar la cuenta completa</button>';
+    h+='</div></div>';
+  }
+  return h;
+}
+function cuartosQueCarganA(r){
+  if(!r) return [];
+  return rooms().filter(x=>x.estado==='ocupada' && Number(x.cuentaCon||0)===Number(r.num) && x.cuentaModo==='compartida');
+}
+function listaCuentasUnidasHTML(){
+  const oc=rooms().filter(r=>r.estado==='ocupada');
+  const raices={}; oc.forEach(r=>{ const due=cuentaDeHab(r)==='yo'?Number(r.num):Number(r.cuentaCon||r.num); const dq=findRoom(due); if(dq && dq.estado==='ocupada') raices[due]=dq; });
+  const conUnion=Object.keys(raices).map(k=>raices[k]).filter(r=>datosCuentaHab(r).list.length>1);
+  if(!conUnion.length) return '';
+  let h='<div style="background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.05);padding:14px 16px;margin-bottom:14px">';
+  h+='<div class="section-title" style="font-size:14.5px;margin-top:0">🔗 Cuentas unidas ahora</div>';
+  conUnion.forEach(r=>{
+    const D=datosCuentaHab(r);
+    h+='<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;border-top:1px solid #eef1f6;padding:8px 0;font-size:13px">';
+    h+='<div><b>Hab. '+esc(String(r.num))+'</b> · '+esc(r.huesped||'—')+'<div style="color:#667;font-size:12.3px">'+D.list.map(x=>'Hab. '+x.num).join(' + ')+' · total '+fmtUSD(D.saldo)+'</div></div>';
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn-ghost" style="padding:5px 10px" onclick="abrirHab('+r.num+')">Ver</button>'+(puedeUnirCuenta()?'<button class="btn-ghost" style="padding:5px 10px" onclick="separarCuenta('+r.num+')">✂️ Separar</button>':'')+'</div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  return h;
 }
 function corregirNombreModal(num, numsStr){
   const r=findRoom(num); if(!r||r.estado!=='ocupada'){ alert('Esa habitación no está ocupada.'); return; }
@@ -7197,12 +7502,17 @@ function corregirNombreConfirm(num, numsStr){
 }
 function cobrarCuentaModal(numsStr){
   if(guardTurno()) return;
-  const g=cobroGrupoDatos(numsStr); if(!g.list.length){ alert('No hay habitaciones para cobrar.'); return; }
+  let g=cobroGrupoDatos(numsStr); if(!g.list.length){ alert('No hay habitaciones para cobrar.'); return; }
+  let _uni=false;
+  if(g.list.length===1){ try{ g=datosCobroCuentaHab(g.list[0]); _uni=true; }catch(e){ _uni=false; } }
   if(g.saldo<=0.009){ alert('Esta cuenta ya está totalmente pagada. No hay saldo por cobrar.'); return; }
   const r0=g.list[0]; const multi=g.list.length>1;
   let body='<button class="close" onclick="cerrarModal()">×</button>';
   body+='<h2>Cobrar · '+esc(g.tituNombre||r0.huesped||'Huésped')+'</h2>';
-  body+='<div class="rstate" style="color:#55637a">'+(multi?(g.list.length+' habitaciones en una sola cuenta'):('Habitación '+r0.num))+' · la habitación seguirá ocupada</div>';
+  body+='<div class="rstate" style="color:#55637a">'+(multi?(g.list.length+' habitaciones en una sola cuenta'):('Habitación '+r0.num))+(g.habsExtra&&g.habsExtra.length?' · 🔗 incluye Hab. '+esc(g.habsExtra.join(', ')):'')+' · la habitación seguirá ocupada</div>';
+  if(g.compartidos && g.compartidos.length){
+    body+='<div style="font-size:12.5px;color:#2a4a73;background:#eef3fb;border:1px solid #c9d8ee;border-radius:9px;padding:8px 11px;margin-bottom:8px">🔗 Incluye <b>'+fmtUSD(g.compartidos.reduce(function(a,x){return a+Number(x.montoUsd||0);},0))+'</b> en consumos cargados por otros cuartos.</div>';
+  }
   body+='<div style="background:#f3f6fb;border-radius:10px;padding:14px">';
   g.porHab.forEach(x=>{ const r=x.r; body+='<div style="border-bottom:1px solid #e4e9f2;padding:7px 0;font-size:13px"><div style="display:flex;justify-content:space-between;font-weight:700"><span>Hab. '+r.num+' · '+esc(r.tipo||'')+'</span><span>'+fmtUSD(x.hosp-x.d+x.cons)+'</span></div><div style="color:#55637a">'+fmtUSD(r.tarifa)+' × '+x.noches+(x.d>0.009?(' −'+promoPct(r)+'%'):'')+(x.cons>0?(' + consumos '+fmtUSD(x.cons)):'')+'</div></div>'; });
   if(g.abo>0) body+='<div style="display:flex;justify-content:space-between;color:var(--verde);font-size:14px;margin-top:6px"><span>Pagos / adelantos previos</span><span>- '+fmtUSD(g.abo)+'</span></div>';
@@ -7220,7 +7530,8 @@ function cobrarCuentaModal(numsStr){
 function cobrarCuentaConfirm(numsStr, btn){
   if(guardTurno()) return;
   if(procesoDoble(btn)) return;
-  const g=cobroGrupoDatos(numsStr); if(!g.list.length){ procesoListo(btn); alert('No hay habitaciones para cobrar.'); return; }
+  let g=cobroGrupoDatos(numsStr); if(!g.list.length){ procesoListo(btn); alert('No hay habitaciones para cobrar.'); return; }
+  if(g.list.length===1){ try{ const _gu=datosCobroCuentaHab(g.list[0]); if(_gu && _gu.list.length>1) g=_gu; }catch(e){} }
   if(g.saldo<=0.009){ procesoListo(btn); alert('Esta cuenta ya está totalmente pagada.'); return; }
   const r0=g.list[0]; const c=g.titu||clienteDeHab(r0); const cr=c?clienteResumen(c):null; const now=new Date();
   const _hNom=g.tituNombre||r0.huesped||''; const _hCid=g.tituId||r0.clienteId||'';
@@ -7235,6 +7546,30 @@ function cobrarCuentaConfirm(numsStr, btn){
   DB.save('pagos', pagos); confirmarControl(ctrl);
   logKardex('pago',{hab:(_conTramos?_habsCtrlTxt:g.nums.join(', ')), huesped:_hNom, clienteId:_hCid, detalle:(multi?('Cobro combinado · '+g.nums.length+' habitaciones'):'Cobro de hospedaje')+' (sin salida)'+(_conTramos?(' · incluye tramos de Hab. '+_habsCtrlTxt+' · Control N° '+fmtControl(ctrl)):''), montoUsd:g.saldo, montoBs:precioBs(g.saldo), metodo:metodo});
   if(g.saldo<=0.009){ procesoListo(btn); alert('Esta cuenta ya está totalmente pagada.'); return; }
+  const _sella=(num, ids, _ctrl)=>{
+    if(!ids || !ids.length) return;
+    const rr=findRoom(num); if(!rr) return;
+    const cargos=cargosDe(rr).map(cg=> ids.indexOf(cg.id)>=0?Object.assign({},cg,{pagado:true,control:(cg.control||_ctrl),controlPago:_ctrl}):cg);
+    updateRoom(num,{cargos:cargos});
+  };
+  if(g.cuentas && g.cuentas.length){
+    /* Cuenta unida: se cobra TODO desde el cuarto dueño de la cuenta y se apunta
+       en cada cuarto solo lo que de verdad es suyo. */
+    g.porHab.forEach(x=>{
+      const r=x.r; const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r);
+      const abPrev=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
+      const faltaHosp=Math.max(0,(hosp-d)-abPrev);
+      const ab=(Array.isArray(r.abonos)?r.abonos.slice():[]);
+      if(faltaHosp>0.009) ab.push({id:'ab'+Date.now()+r.num, concepto:'Pago de hospedaje'+(r.num!==r0.num?(' (cuenta unida con Hab. '+r0.num+')'):''), montoUsd:faltaHosp, fecha:now.toISOString(), control:ctrl});
+      const ids=cargosDe(r).filter(cg=>!cg.pagado && (Number(cg.hab||r.num)===Number(r.num))).map(cg=>cg.id);
+      ligarCargosControl(ids, ctrl);
+      const cargos=cargosDe(r).map(cg=> ids.indexOf(cg.id)>=0?Object.assign({},cg,{pagado:true,control:(cg.control||ctrl),controlPago:ctrl}):cg);
+      updateRoom(r.num,{abonos:ab, cargos:cargos, control:ctrl});
+    });
+    const comp=g.compartidos||[];
+    if(comp.length) _sella(r0.num, comp.map(c=>c.id), ctrl);
+    comp.forEach(c=>{ const org=findRoom(c.habOriginal); if(org && Number(org.num)!==Number(r0.num)) _sella(org.num, [String(c.id).split('_')[0]], ctrl); });
+  } else {
   g.porHab.forEach(x=>{ const r=x.r; const noches=nochesHab(r); const hosp=brutoHab(r); const d=descUsd(r);
     const abPrev=(Array.isArray(r.abonos)?r.abonos:[]).reduce((s,a)=>s+abonoCuentaUsd(a,r),0);
     const pendIds=cargosDe(r).filter(cg=>!cg.pagado).map(cg=>cg.id);
@@ -7245,6 +7580,7 @@ function cobrarCuentaConfirm(numsStr, btn){
     if(faltaHosp>0.009) ab.push({id:'ab'+Date.now()+r.num, concepto:'Pago de hospedaje', montoUsd:faltaHosp, fecha:now.toISOString()});
     updateRoom(r.num,{cargos:cargos, abonos:ab, control:ctrl});
   });
+  }
   const _habTxt = multi?(g.nums.length+' habitaciones ('+g.nums.join(', ')+')'):('Habitación '+g.nums[0]);
   window._ultimoCobro = { pagoId:(pagos[0]&&pagos[0].id), ctrl:ctrl, habs:habsDeControlGroup(g.list), huesped:_hNom, clienteId:_hCid, montoUsd:g.saldo, montoBs:precioBs(g.saldo), metodo:metodo,
     lineas:[{txt:_habTxt},{txt:'Huésped: '+(_hNom||'—')},{txt:'Control N° '+fmtControl(ctrl)},{txt:'Forma de pago: '+metodo},{txt:'Cobrado: '+fmtUSD(g.saldo)+' · '+fmtBs(precioBs(g.saldo)), strong:true}],
@@ -7267,7 +7603,8 @@ function checkoutCuenta(numsStr){
     limpiarAutorizacionHab(r.num);
     logKardex('checkout', {hab:r.num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Check-out'+(sinCobro?' SIN cobro (quedó saldo)':' (cuenta pagada)')+(multi?(' · cuenta '+g.nums.join(', ')):''), montoUsd:0, montoBs:0, metodo:sinCobro?'Sin cobro':'Pagado'});
     cerrarEstadia(r.clienteId||'', r.num, {noches:r.noches||1, montoUsd:abR, metodo:sinCobro?'Sin cobro':'Pagado'});
-    updateRoom(r.num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, control:0, tramos:[], tramosCobro:undefined});
+    updateRoom(r.num,{estado:'sucia', hkNueva:true, hkOrigen:'Recepción', huesped:'', clienteId:'', tituId:'', personas:0, noches:0, checkin:'', salida:'', cargos:[], abonos:[], limpiezaPendiente:false, promoId:'', promoTitulo:'', promoDesc:0, control:0, tramos:[], tramosCobro:undefined, cuentaCon:0, cuentaModo:'', cuentaPor:'', cuentaFecha:''});
+    try{ soltarCuentasDeHab(r.num); }catch(e){}
     try{ cerrarControlDeHab(r); }catch(_ecx){}
   });
   cerrarModal(); render();
