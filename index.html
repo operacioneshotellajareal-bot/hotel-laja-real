@@ -1671,9 +1671,12 @@ function pmLeer(prefix){
   const rows=Array.prototype.slice.call(document.querySelectorAll('#'+prefix+'-pm-lineas .pm-linea'));
   let lineas=[];
   rows.forEach(row=>{ const met=row.querySelector('.'+prefix+'-pm-met').value; const mo=parseFloat(row.querySelector('.'+prefix+'-pm-monto').value)||0; const refEl=row.querySelector('.'+prefix+'-pm-ref'); const ref=refEl?(refEl.value||'').trim():''; if(mo>0) lineas.push({metodo:met, montoUsd:mo, ref:ref}); });
-  if(lineas.length===0 && rows.length===1 && (st.total||0)>0){ const r0=rows[0]; const refEl=r0.querySelector('.'+prefix+'-pm-ref'); lineas.push({metodo:r0.querySelector('.'+prefix+'-pm-met').value, montoUsd:st.total, ref:refEl?(refEl.value||'').trim():''}); }
-  if(lineas.length===0) return {ok:false, msg:'Indica al menos una forma de pago con su monto.'};
+  if(lineas.length===0 && rows.length===1 && (st.total||0)>0){ const r0=rows[0]; const _mo0=parseFloat(r0.querySelector('.'+prefix+'-pm-monto').value); if(!isNaN(_mo0) && _mo0>0){ const refEl=r0.querySelector('.'+prefix+'-pm-ref'); lineas.push({metodo:r0.querySelector('.'+prefix+'-pm-met').value, montoUsd:st.total, ref:refEl?(refEl.value||'').trim():''}); } }
+  if(lineas.length===0) return {ok:false, msg:'Falta la forma de pago: escribe un monto mayor a 0 y elige cómo pagó. Un cobro en cero no se registra.'};
   const suma=lineas.reduce((s,l)=>s+l.montoUsd,0);
+  if(!(suma>0.009)) return {ok:false, msg:'Un cobro en cero no se registra. Escribe un monto mayor a 0.'};
+  /* [CERO] Ninguna línea de forma de pago puede quedar en cero */
+  for(const _l of lineas){ if(!(_l.montoUsd>0.009)) return {ok:false, msg:'Hay una forma de pago con monto en cero ('+_l.metodo+'). Escribe el monto o quita esa línea.'}; }
   if((st.total||0)>0 && Math.abs(suma-st.total)>0.01) return {ok:false, msg:'Los montos de las formas de pago ('+fmtUSD(suma)+') no coinciden con el total a cobrar ('+fmtUSD(st.total)+'). Ajusta los montos.'};
   lineas.forEach(l=>{ l.montoBs=precioBs(l.montoUsd); });
   const metodoStr=lineas.map(l=>{ let s=l.metodo; if(lineas.length>1) s+=' ('+fmtUSD(l.montoUsd)+')'; if(l.ref) s+=' [Ref: '+l.ref+']'; return s; }).join(' + ');
@@ -3261,15 +3264,20 @@ function abrirHab(num){
     body += '<div class="field"><label>Entrada</label><div style="margin-top:4px">'+(r.checkin||'—')+'</div></div>';
     body += '<div class="field"><label>Salida prevista</label><div style="margin-top:4px">'+(r.salida?fechaDDMMYYYY(r.salida):'—')+'</div></div>';
     body += '<div class="field"><label>Promoción</label><select id="m-promo-ocup" onchange="cambiarPromoHab('+num+')">'+promoSelectOptions(r.promoId||'')+'</select>'+(r.promoTitulo?'<div style="background:#fff6e5;border:1px solid #f3c96b;border-radius:8px;padding:7px 10px;font-size:12.5px;color:#9a6a00;margin-top:6px">🎁 Promoción aplicada: <b>'+esc(r.promoTitulo)+'</b>'+(promoPct(r)>0?(' · −'+promoPct(r)+'% ('+fmtUSD(descUsd(r))+' menos)'):'')+'</div>':'')+'</div>';
+    if(r.autorizada){
+      body += bloqueoAutorizadaHTML(r,'tarifa');
+    } else {
     body += '<div class="field"><label>Tarifa por noche (USD) — editable</label><input id="m-tarifa2" type="number" min="0" step="0.01" value="'+(r.tarifa||0)+'" oninput="recalcOcup('+num+')"></div>';
     body += '<button class="btn-ghost" style="margin-bottom:10px" onclick="guardarTarifaRecep('+num+')">Guardar nueva tarifa</button>';
+    }
     body += tramosRenglonesHTML(r);
-    body += '<div class="field" style="margin-top:6px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-tramos-act" style="width:auto;margin:0" '+(r.tramosCobro!==false?'checked':'')+' onchange="toggleTramosCobro('+num+')"> Cobrar por tramos (cada tramo con su tarifa)</label></div>';
+    if(!r.autorizada) body += '<div class="field" style="margin-top:6px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="m-tramos-act" style="width:auto;margin:0" '+(r.tramosCobro!==false?'checked':'')+' onchange="toggleTramosCobro('+num+')"> Cobrar por tramos (cada tramo con su tarifa)</label></div>';
     body += desgloseBox(tarifaEfectiva(r), nochesHab(r), 'ocup', promoPct(r));
-    try{ body += cuentaHabBox(r); }catch(e){}
+    if(r.autorizada){ body += cuentaHabBoxAutorizada(r); } else { try{ body += cuentaHabBox(r); }catch(e){} }
     if(r.limpiezaPendiente){ body += '<div style="background:#fff3e0;border:1px solid #f3961c;color:#b5651d;border-radius:8px;padding:8px 10px;font-size:13px;margin:10px 0">🧹 Limpieza solicitada · pendiente de Ama de Llaves</div>'; }
     /* [COMIDAS] plan contratado y boton para volver a sumarlo a la cuenta */
-    try{
+    if(r.autorizada){ body += bloqueoAutorizadaHTML(r,'plan'); }
+    else try{
       var _pl=r.plan||'solo';
       var _pcn=planCostoNoche(_pl);
       var _sumado=cargosDe(r).filter(function(c){ return c.origen==='comidaPlan'; }).reduce(function(s2,c){ return s2+Number(c.montoUsd||0); },0);
@@ -3304,7 +3312,7 @@ function abrirHab(num){
     }
     body += '<div class="divider"></div><div class="actions">';
     try{ body += controlAmarradoHTML(r); }catch(e){}
-    body += '<button class="btn-green" onclick="agregarCargoModal('+num+')">Agregar consumo</button>';
+    if(!r.autorizada) body += '<button class="btn-green" onclick="agregarCargoModal('+num+')">Agregar consumo</button>';
     body += '<button class="btn-blue" onclick="cobrarCuentaModal(\''+num+'\')">💵 Cobrar ahora</button>';
     body += '<button class="btn-gray" onclick="extenderEstadiaModal('+num+')">Extender estadía</button>';
     body += '<button class="btn-gray" onclick="solicitarLimpieza('+num+')">Solicitar limpieza</button>';
@@ -3356,7 +3364,6 @@ function abrirHab(num){
       body += '<div style="font-size:12.5px;color:#6b5a86;margin-top:6px">Para invitados del jefe: amigos, familia o personas que vienen a trabajar al hotel.</div>';
       body += '<div id="m-autoriza-box" style="display:none;margin-top:10px">';
       body += '<div class="field"><label>¿Cómo se maneja el precio?</label><select id="m-autoriza-modo" onchange="recalcCheckin('+num+')"><option value="gratis">Gratis (cortesía, no se cobra)</option><option value="mitad">Mitad de precio</option><option value="credito">Cobrar después (a crédito)</option></select></div>';
-      body += '<div class="field"><label>Nombre del invitado</label><input id="m-autoriza-invitado" placeholder="¿Para quién es?"></div>';
       body += '<div class="field"><label>Motivo</label><select id="m-autoriza-motivo"><option value="Amigo de escA(autorizaTexto())">Amigo de esc(autorizaTexto())</option><option value="Familia de escA(autorizaTexto())">Familia de esc(autorizaTexto())</option><option value="Trabajador externo (viene a trabajar al hotel)">Trabajador externo</option><option value="Otro">Otro</option></select></div>';
       body += '<div id="m-autoriza-aviso" style="font-size:12px;color:#6b5a86;background:#fff;border:1px solid #e8dcf8;border-radius:9px;padding:8px 10px;line-height:1.5">👑 Si es <b>gratis</b>, no se cobra nada y no sale como pendiente. Si es <b>mitad de precio</b>, el otro 50% se le carga en <b>CXC</b> al invitado, con su nota. Si es <b>a crédito</b>, todo el hospedaje se le carga en CXC.</div>';
       body += '</div></div>';
@@ -3982,6 +3989,8 @@ function toggleTramosCobro(num){
   abrirHab(num);
 }
 function guardarTarifaRecep(num){
+  const _rt=findRoom(num);
+  if(_rt && _rt.autorizada){ alert('Esta habitación está autorizada por '+autorizaTexto()+'.\n\nNo se le cambia la tarifa: la fija la autorización del check-in.'); return; }
   const inp = document.getElementById('m-tarifa2') || document.getElementById('m-tarifa');
   const v = parseFloat(inp.value)||0;
   const r=findRoom(num);
@@ -4539,6 +4548,8 @@ function cuentaHabBox(r){
   return h;
 }
 function agregarCargoModal(num){
+  var _rb=findRoom(num);
+  if(_rb && _rb.autorizada){ var _bh='<button class="close" onclick="abrirHab('+num+')">×</button><h2>Hab. '+num+' · autorizada</h2>'+bloqueoAutorizadaHTML(_rb,'cargo')+'<div class="actions"><button class="btn-gray" onclick="extenderEstadiaModal('+num+')">Extender estadía</button><button class="btn-ghost" onclick="abrirHab('+num+')">Volver</button></div>'; showModal(_bh); return; }
   let body='<button class="close" onclick="abrirHab('+num+')">×</button>';
   body+='<h2>Agregar consumo · Hab. '+num+'</h2>';
   body+='<div class="rstate" style="color:#55637a">Comida, lavandería u otros cargos a la cuenta</div>';
@@ -4567,7 +4578,9 @@ function guardarCargo(num){
   if(monto<=0){ alert('Escribe un monto mayor a 0'); return; }
   const esComida=(tipo==='Comida'||tipo==='Minibar');
   const restEl=document.getElementById('cg-rest'); const rest=(esComida&&restEl)?restEl.value:'';
-  const r=findRoom(num); const cargos=cargosDe(r).map(function(x){ return (x&&!x.hab)?Object.assign({},x,{hab:num,habOriginal:num}):x; });
+  const r=findRoom(num);
+  if(r && r.autorizada){ alert('Esta habitación está autorizada por '+autorizaTexto()+'.\n\nEn una habitación autorizada solo se maneja el hospedaje: no se le cargan consumos.\n\nLo único que se puede hacer es extender la estadía.'); return; }
+  const cargos=cargosDe(r).map(function(x){ return (x&&!x.hab)?Object.assign({},x,{hab:num,habOriginal:num}):x; });
   const _cgId='cg'+Date.now();
   var _acompId=''; try{ var _ae=document.getElementById('cg-acomp'); if(_ae) _acompId=_ae.value||''; }catch(e){}
   var _acNom=''; if(_acompId){ var _aa=(Array.isArray(r.acompanantes)?r.acompanantes:[]).find(function(x){ return x && x.id===_acompId; }); if(_aa) _acNom=_aa.nombre||''; }
@@ -4590,73 +4603,6 @@ function quitarCargo(num,id){
   if(cg.pagado){ alert('Ese consumo ya fue cobrado, no se puede quitar.'); return; }
   if(!confirm('¿Quitar este consumo de la cuenta?')) return;
   updateRoom(num,{cargos:cargos.filter(x=>x.id!==id)}); abrirHab(num);
-}
-function cobrarSinCheckoutModal(num){
-  if(guardTurno()) return;
-  const r=findRoom(num); const pend=cargosDe(r).filter(c=>!c.pagado);
-  let body='<button class="close" onclick="abrirHab('+num+')">×</button>';
-  body+='<h2>Cobrar sin check-out · Hab. '+num+'</h2>';
-  body+='<div class="rstate" style="color:#55637a">La habitación seguirá ocupada</div>';
-  if(pend.length){
-    body+='<div class="section-title" style="font-size:14px;margin-top:6px">Consumos pendientes</div>';
-    pend.forEach(c=>{ body+='<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:6px;cursor:pointer"><input type="checkbox" class="cob-chk" value="'+c.id+'" data-m="'+Number(c.montoUsd||0)+'" checked onchange="cobCalc()" style="width:auto;margin:0"> '+esc(c.tipo+(c.desc?' · '+c.desc:''))+' — <b>'+fmtUSD(c.montoUsd)+'</b></label>'; });
-  } else {
-    body+='<div style="color:#8893a5;font-size:13px;margin:6px 0">No hay consumos pendientes. Puedes cobrar un adelanto o un concepto libre abajo.</div>';
-  }
-  body+='<div class="divider"></div><div class="section-title" style="font-size:14px">Otro cobro (opcional)</div>';
-  body+='<div class="field"><label>Concepto</label><input id="cob-concepto" placeholder="ej: adelanto de hospedaje"></div>';
-  body+='<div class="field"><label>Monto (USD)</label><input id="cob-otro" type="number" min="0" step="0.01" value="0" oninput="cobCalc()"></div>';
-  body+=pmWidget('cob');
-  body+='<div style="background:#f3f6fb;border-radius:10px;padding:14px;margin-top:4px"><div style="display:flex;justify-content:space-between;font-weight:800;color:var(--azul);font-size:16px"><span>Total a cobrar</span><span id="cob-usd">'+fmtUSD(0)+'</span></div><div style="display:flex;justify-content:space-between;font-weight:800;font-size:16px;margin-top:4px"><span>En Bs</span><span id="cob-bs">'+fmtBs(0)+'</span></div></div>';
-  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cobrarSinCheckout('+num+', this)">Cobrar ahora</button><button onclick="cerrarModalPago()" class="btn-cancelar">✖ Cancelar</button></div>';
-  showModal(body); pmReset('cob', 0); cobCalc();
-}
-function cobCalc(){
-  let t=0; document.querySelectorAll('.cob-chk').forEach(ch=>{ if(ch.checked) t+=Number(ch.getAttribute('data-m'))||0; });
-  const otroEl=document.getElementById('cob-otro'); t+=(otroEl?parseFloat(otroEl.value)||0:0);
-  const u=document.getElementById('cob-usd'), b=document.getElementById('cob-bs');
-  if(u) u.innerText=fmtUSD(t); if(b) b.innerText=fmtBs(precioBs(t));
-  pmSyncSingle('cob', t);
-}
-function ligarCargosControl(ids, ctrl){
-  if(!ids||!ids.length||!ctrl) return;
-  const k=kardexAll(); let ch=false;
-  k.forEach(m=>{ if(m.tipo==='cargo' && m.cargoId && ids.indexOf(m.cargoId)>=0){ if(!m.control){ m.control=ctrl; ch=true; } else if(!m.controlPago){ m.controlPago=ctrl; ch=true; } } });
-  if(ch) DB.save('kardex', k);
-}
-function quitarCargo(num,id){
-  const r=findRoom(num); const cargos=cargosDe(r);
-  const cg=cargos.find(x=>x.id===id); if(!cg) return;
-  if(cg.pagado){ alert('Ese consumo ya fue cobrado, no se puede quitar.'); return; }
-  if(!confirm('¿Quitar este consumo de la cuenta?')) return;
-  updateRoom(num,{cargos:cargos.filter(x=>x.id!==id)}); abrirHab(num);
-}
-function cobrarSinCheckoutModal(num){
-  if(guardTurno()) return;
-  const r=findRoom(num); const pend=cargosDe(r).filter(c=>!c.pagado);
-  let body='<button class="close" onclick="abrirHab('+num+')">×</button>';
-  body+='<h2>Cobrar sin check-out · Hab. '+num+'</h2>';
-  body+='<div class="rstate" style="color:#55637a">La habitación seguirá ocupada</div>';
-  if(pend.length){
-    body+='<div class="section-title" style="font-size:14px;margin-top:6px">Consumos pendientes</div>';
-    pend.forEach(c=>{ body+='<label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:6px;cursor:pointer"><input type="checkbox" class="cob-chk" value="'+c.id+'" data-m="'+Number(c.montoUsd||0)+'" checked onchange="cobCalc()" style="width:auto;margin:0"> '+esc(c.tipo+(c.desc?' · '+c.desc:''))+' — <b>'+fmtUSD(c.montoUsd)+'</b></label>'; });
-  } else {
-    body+='<div style="color:#8893a5;font-size:13px;margin:6px 0">No hay consumos pendientes. Puedes cobrar un adelanto o un concepto libre abajo.</div>';
-  }
-  body+='<div class="divider"></div><div class="section-title" style="font-size:14px">Otro cobro (opcional)</div>';
-  body+='<div class="field"><label>Concepto</label><input id="cob-concepto" placeholder="ej: adelanto de hospedaje"></div>';
-  body+='<div class="field"><label>Monto (USD)</label><input id="cob-otro" type="number" min="0" step="0.01" value="0" oninput="cobCalc()"></div>';
-  body+=pmWidget('cob');
-  body+='<div style="background:#f3f6fb;border-radius:10px;padding:14px;margin-top:4px"><div style="display:flex;justify-content:space-between;font-weight:800;color:var(--azul);font-size:16px"><span>Total a cobrar</span><span id="cob-usd">'+fmtUSD(0)+'</span></div><div style="display:flex;justify-content:space-between;font-weight:800;font-size:16px;margin-top:4px"><span>En Bs</span><span id="cob-bs">'+fmtBs(0)+'</span></div></div>';
-  body+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="cobrarSinCheckout('+num+', this)">Cobrar ahora</button><button onclick="cerrarModalPago()" class="btn-cancelar">✖ Cancelar</button></div>';
-  showModal(body); pmReset('cob', 0); cobCalc();
-}
-function cobCalc(){
-  let t=0; document.querySelectorAll('.cob-chk').forEach(ch=>{ if(ch.checked) t+=Number(ch.getAttribute('data-m'))||0; });
-  const otroEl=document.getElementById('cob-otro'); t+=(otroEl?parseFloat(otroEl.value)||0:0);
-  const u=document.getElementById('cob-usd'), b=document.getElementById('cob-bs');
-  if(u) u.innerText=fmtUSD(t); if(b) b.innerText=fmtBs(precioBs(t));
-  pmSyncSingle('cob', t);
 }
 function cobrarSinCheckout(num){
   if(guardTurno()) return;
@@ -7204,36 +7150,6 @@ function aplicarBulkEstado(){
   cerrarModal(); render();
   if(ocupadas.length) setTimeout(function(){ alert('Listo. '+ocupadas.length+' habitación(es) ocupada(s) no se cambiaron.'); }, 100);
 }
-function imprimirListadoHabitaciones(){
-  const lista=rooms().filter(habPasaFiltro)
-    .slice().sort((a,b)=>(a.piso-b.piso)||(a.num-b.num));
-  if(!lista.length){ alert('No hay habitaciones para imprimir.'); return; }
-  const _c=impConfig();
-  const resumen={total:lista.length,libre:0,ocupada:0,sucia:0,mantenimiento:0,otras:0};
-  let filas='';
-  lista.forEach(r=>{
-    if(resumen[r.estado]!==undefined) resumen[r.estado]++; else resumen.otras++;
-    let f='<td class="c">'+r.num+'</td>';
-    if(_c.colPiso) f+='<td class="c">'+r.piso+'</td>';
-    if(_c.colTipo) f+='<td>'+esc(r.tipo||'')+'</td>';
-    if(_c.colTarifa) f+='<td class="r">'+fmtUSD(r.tarifa)+'</td>';
-    if(_c.colEstado) f+='<td>'+ESTADOS[r.estado].t+'</td>';
-    filas+='<tr>'+f+'</tr>';
-  });
-  const titFiltro = (habFiltroTipo?(' — tipo: '+esc(habFiltroTipo)):'')+(habFiltroNum?(' — n° contiene "'+esc(habFiltroNum)+'"'):'');
-  let html='<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Listado de habitaciones</title>';
-  html+='<style>*{font-family:Arial,sans-serif;box-sizing:border-box}body{margin:0;padding:30px;color:#1c2430}';
-  html+='h1{font-size:20px;color:#0d3b66;margin:0}.sub{color:#667;font-size:13px;margin:4px 0 14px}';
-  html+='.res{font-size:12.5px;color:#44526a;margin:0 0 16px}.res b{color:#0d3b66}';
-  html+='table{width:100%;border-collapse:collapse;margin-bottom:18px;font-size:13px}';
-  html+='th,td{border:1px solid #ccd;padding:7px 9px;text-align:left}th{background:#eef3fa;color:#44526a}';
-  html+='.r{text-align:right}.c{text-align:center}@media print{body{padding:0}}</style></head><body style="zoom:'+escalaImpresion()+'">';
-  html+=(hotel().nombre?('<div style="font-size:14px;color:#0d3b66;font-weight:700">'+esc(hotel().nombre)+'</div>'):'')+'<h1>'+esc(tituloDoc('listado','Listado de habitaciones'))+titFiltro+'</h1>'+hotelLinePrint()+'<div class="sub">Generado: '+new Date().toLocaleString('es-VE')+'</div>';
-  html+='<div class="res">Total: <b>'+resumen.total+'</b> &nbsp;·&nbsp; Libres: <b>'+resumen.libre+'</b> &nbsp;·&nbsp; Ocupadas: <b>'+resumen.ocupada+'</b> &nbsp;·&nbsp; Por limpiar: <b>'+resumen.sucia+'</b> &nbsp;·&nbsp; Mantenimiento: <b>'+resumen.mantenimiento+'</b></div>';
-  { let _th='<th class="c">Hab.</th>'; if(_c.colPiso) _th+='<th class="c">Piso</th>'; if(_c.colTipo) _th+='<th>Tipo</th>'; if(_c.colTarifa) _th+='<th class="r">Tarifa</th>'; if(_c.colEstado) _th+='<th>Estado</th>'; html+='<table><tr>'+_th+'</tr>'+filas+'</table>'; }
-  html+=piePaginaHTML()+'</body></html>';
-  return imprimirHTML(html);
-}
 function imprimirSelHabs(){
   const sel=habsSeleccionadas().slice().sort((a,b)=>a.num-b.num);
   if(!sel.length){ alert('No hay habitaciones seleccionadas.'); return; }
@@ -7975,6 +7891,7 @@ function cobrarCuentaModal(numsStr){
   if(g.compartidos && g.compartidos.length){
     body+='<div style="font-size:12.5px;color:#2a4a73;background:#eef3fb;border:1px solid #c9d8ee;border-radius:9px;padding:8px 11px;margin-bottom:8px">🔗 Incluye <b>'+fmtUSD(g.compartidos.reduce(function(a,x){return a+Number(x.montoUsd||0);},0))+'</b> en consumos cargados por otros cuartos.</div>';
   }
+  body+=cobroHoyAvisoHTML(r0);
   body+='<div style="background:#f3f6fb;border-radius:10px;padding:14px">';
   g.porHab.forEach(x=>{ const r=x.r; body+='<div style="border-bottom:1px solid #e4e9f2;padding:7px 0;font-size:13px"><div style="display:flex;justify-content:space-between;font-weight:700"><span>Hab. '+r.num+' · '+esc(r.tipo||'')+'</span><span>'+fmtUSD(x.hosp-x.d+x.cons)+'</span></div><div style="color:#55637a">'+fmtUSD(r.tarifa)+' × '+x.noches+(x.d>0.009?(' −'+promoPct(r)+'%'):'')+(x.cons>0?(' + consumos '+fmtUSD(x.cons)):'')+'</div></div>'; });
   if(g.abo>0) body+='<div style="display:flex;justify-content:space-between;color:var(--verde);font-size:14px;margin-top:6px"><span>Pagos / adelantos previos</span><span>- '+fmtUSD(g.abo)+'</span></div>';
@@ -7996,6 +7913,21 @@ function cobrarCuentaConfirm(numsStr, btn){
   if(g.list.length===1){ try{ const _gu=datosCobroCuentaHab(g.list[0]); if(_gu && _gu.list.length>1) g=_gu; }catch(e){} }
   if(g.saldo<=0.009){ procesoListo(btn); alert('Esta cuenta ya está totalmente pagada.'); return; }
   const r0=g.list[0]; const c=g.titu||clienteDeHab(r0); const cr=c?clienteResumen(c):null; const now=new Date();
+  /* [DOBLE-COBRO] Si hace menos de 3 minutos se registró un cobro de estas mismas habitaciones,
+     se pregunta antes de volver a cobrar (evita el doble toque y el cobro repetido). */
+  try{
+    var _numsC=g.nums.map(function(x){ return String(x); });
+    var _rep=(DB.get('pagos',[])||[]).find(function(pg){
+      if(!pg || !pg.fechaStr) return false;
+      var t0=Date.parse(pg.fechaStr); if(isNaN(t0)) return false;
+      if(Date.now()-t0>180000) return false;
+      var hn=String(pg.hab||'').split(',').map(function(x){ return String(parseInt(x,10)); });
+      return hn.filter(function(x){ return _numsC.indexOf(x)>=0; }).length===_numsC.length;
+    });
+    if(_rep){
+      if(!confirm('⚠️ Hace un momento ya se registró un cobro de esta cuenta ('+fmtUSD(_rep.montoUsd)+' · Control '+fmtControl(_rep.control)+').\n\n¿Seguro que quieres registrar OTRO cobro?\n\nSi fue un doble toque, toca Cancelar.')){ procesoListo(btn); return; }
+    }
+  }catch(e){}
   const _hNom=g.tituNombre||r0.huesped||''; const _hCid=g.tituId||r0.clienteId||'';
   if(PM_STATE['grp']) PM_STATE['grp'].total=g.saldo;
   const pm=pmLeer('grp'); if(!pm.ok){ procesoListo(btn); alert(pm.msg); return; }
@@ -8242,9 +8174,12 @@ function extenderEstadiaConfirm(num, btn){
   let nuevaSalida=(r.salida?sumarDiasISO(r.salida,add):fechaSalidaAuto(nuevas))||fechaSalidaAuto(nuevas);
   updateRoom(num,{noches:nuevas, salida:nuevaSalida, ocultarCobrar:false});
   logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Extensión de estadía: +'+add+' noche(s) · total '+nuevas+' · nueva salida '+fechaDDMMYYYY(nuevaSalida)+' · '+fmtUSD(Number(r.tarifa||0)*add)+' agregados', montoUsd:0, montoBs:0, metodo:''});
+  /* [COMIDAS-NOCHES-NUEVAS] se pregunta por las comidas de las noches nuevas (sin nombres fijos) */
+  try{ extenderPreguntarComidas(num, add); return; }catch(e){}
   cerrarModal(); render();
   alert('Estadía extendida. Ahora son '+nuevas+' noche(s). Nueva fecha de salida: '+fechaDDMMYYYY(nuevaSalida)+'. El nuevo monto ya aparece en "Cobrar".');
 }
+
 function imprimirReciboGrupo(numsStr){
   const g=cobroGrupoDatos(numsStr); if(!g.list.length){ alert('No hay habitaciones para cobrar.'); return; }
   const r0=g.list[0]; const c=g.titu||clienteDeHab(r0); const cr=c?clienteResumen(c):null; const now=new Date(); const ctrlRecibo=controlDeGrupo(g.list)||peekControl();
@@ -8393,7 +8328,7 @@ function renderCaja(){
   pagos.forEach(p=>{
     h += '<div class="task"><div class="info"><b>'+(p.hab?('Hab. '+p.hab):(p.esAnticipo?('Anticipo reserva '+(p.reservaLoc||'')):(p.clienteId?'Cobro a cliente':'Cobro suelto')))+'</b> <span style="font-size:12.5px;color:#55637a">'+esc(p.huesped||p.concepto||'')+'</span><div class="meta">'+(p.control?('Control N° '+fmtControl(p.control)+' · '):'')+p.metodo+' · '+p.fechaStr+' · '+esc(p.usuario||'')+'</div></div>';
     h += '<div style="text-align:right"><div style="font-weight:800;color:var(--azul)">'+fmtBs(p.montoBs)+'</div><div style="font-size:12px;color:#8893a5">'+fmtUSD(p.montoUsd)+'</div>';
-    if(session().rol==='admin' || puedeSup('anularPagos')) h += '<button class="btn-red" style="padding:4px 10px;margin-top:4px;font-size:12px" onclick="borrarPago('+p.id+')">Anular</button>';
+    if(session().rol==='admin' || puedeSup('anularPagos')) h += '<button class="btn-ghost" style="padding:4px 10px;margin-top:4px;font-size:12px;margin-right:6px" onclick="editarPagoModal('+p.id+')">✏️ Corregir</button><button class="btn-red" style="padding:4px 10px;margin-top:4px;font-size:12px" onclick="borrarPago('+p.id+')">Anular</button>';
     h += '</div></div>';
   });
   h += '</div>';
@@ -10088,35 +10023,54 @@ function emitComidasInc(ctx){
 /* Cargo del plan de comidas a la cuenta de la habitación (opción A: mismo precio que se le paga al restaurante, por noche) */
 function aplicarCargoComida(num, plan, noches){
   var r=findRoom(num); if(!r) return;
-  var monto=planCostoNoche(plan)*(parseInt(noches)||0);
-  if(monto<=0.009){ /* [COMIDAS] sin precio configurado no se puede sumar nada: se avisa claro */
+  var esSolo=(plan==='solo');
+  var meals=(esSolo?[]:planMeals(plan)).slice();
+  var nn=(parseInt(noches)||0);
+  var precioPlan=planCostoNoche(plan);
+  var monto=esSolo?0:(precioPlan*nn);
+  if(!esSolo && monto<=0.009){ /* [COMIDAS] sin precio configurado no se puede sumar nada: se avisa claro */
     var _falt=[]; var _pr=comidasPrecios(); planMeals(plan).forEach(function(m){ if((_pr[m]||0)<=0) _falt.push(mealLabel(m).toLowerCase()); });
     setTimeout(function(){ try{ alert('El plan de comidas quedó guardado, pero no se sumó nada a la cuenta porque todavía no tiene precio'+( _falt.length?(' '+_falt.join(', ')):'')+'.\n\nUn usuario con permiso debe poner el precio en la pantalla de comidas (Comidas incluidas → precios). Después, en la cuenta de la habitación, usa "Sumar el plan de comidas".'); }catch(e){} }, 400);
   }
   var cargos=cargosDe(r).slice();
-  /* [CUENTA-UNIDA] Si el plan de comidas YA estaba sumado con el MISMO monto, no se suma
-     otra vez (eso duplicaba las comidas y se cargaban a otros cuartos).
-     Si cambio el monto y ya se habia cobrado, el cargo viejo NO se borra: se marca
-     como reemplazado para que el corte y el historial sigan mostrando lo que se cobro. */
-  var _plActual=cargos.filter(function(c){ return c.origen==='comidaPlan'; });
-  var _sumado=_plActual.filter(function(c){ return !c.pagado && !c.control; }).reduce(function(s2,c){ return s2+Number(c.montoUsd||0); },0);
-  if(_plActual.length && Math.abs(_sumado-monto)<=0.009 && monto>0 && _plActual.every(function(c){ return !c.pagado || Math.abs(Number(c.montoUsd||0)-monto)<=0.009; })){
-    cargos=cargos.map(function(c){ return c.origen==='comidaPlan'?Object.assign({},c,{desc:planLabel(plan)+' · '+noches+' noche(s)'}):c; });
+  /* [COMIDAS-POR-NOCHE] El plan se lleva por noche, en renglones chiquitos: "☕ Desayuno · 1 noche".
+     Asi se puede quitar o corregir UNA comida sin tocar las demas, y cuando se extiende la
+     estadia se agregan SOLO las noches nuevas (no se duplica lo de antes). */
+  var _plActual=cargos.filter(function(c){ return c.origen==='comidaPlan' && !c.pagado && !c.control; });
+  var _ok=true;
+  meals.forEach(function(m){
+    var cnt=0, tot=0;
+    _plActual.forEach(function(c){ if(c.comida===m){ cnt+=(Number(c.nochesCubiertas)||0); tot+=Number(c.montoUsd||0); } });
+    var esperado=Math.round((comidasPrecios()[m]||0)*nn*100)/100;
+    if(cnt!==nn || Math.abs(tot-esperado)>0.009) _ok=false;
+  });
+  if(!esSolo && meals.length && _ok && _plActual.length===meals.length){
+    /* ya estaba bien sumado: solo se actualiza la etiqueta, no se toca la plata */
+    cargos=cargos.map(function(c){ return (c.origen==='comidaPlan')?Object.assign({},c,{desc:planLabel(plan)+' · '+(Number(c.nochesCubiertas)||nn)+' noche(s)'}):c; });
     updateRoom(num,{plan:plan, cargos:cargos, comidaincTotal:monto});
     return;
   }
+  /* Lo que ya se cobro NO se borra nunca: se marca como reemplazado para que el corte y el historial sigan mostrando lo que de verdad se cobro. */
   cargos=cargos.map(function(c){ return (c.origen==='comidaPlan' && (c.pagado || c.control))?Object.assign({},c,{origen:'comidaPlanViejo', desc:'(reemplazado) '+(c.desc||'')}):c; });
   cargos=cargos.filter(function(c){ return c.origen!=='comidaPlan'; });
-  if(monto>0){
-    cargos.push({id:'cp'+Date.now(), tipo:'Comida', desc:planLabel(plan)+' · '+noches+' noche(s)', montoUsd:monto, restaurante:'', origen:'comidaPlan', fecha:new Date().toISOString(), pagado:false, control:null, hab:Number(num)});
+  if(!esSolo && monto>0){
+    var _ts=Date.now();
+    meals.forEach(function(m,ix){
+      var pu=Number(comidasPrecios()[m])||0;
+      if(pu<=0) return;
+      var mto=Math.round(pu*nn*100)/100;
+      cargos.push({id:'cp'+(_ts+ix), tipo:'Comida', desc:mealIcon(m)+' '+mealLabel(m)+' · '+nn+' noche(s)', montoUsd:mto, restaurante:'', origen:'comidaPlan', comida:m, nochesCubiertas:nn, fecha:new Date().toISOString(), pagado:false, control:null, hab:Number(num)});
+    });
   }
   updateRoom(num,{plan:plan, cargos:cargos, comidaincTotal:monto, ocultarCobrar:false});
-  logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:'cp-plan', control:siguienteControl(), detalle:'Plan de comidas · '+planLabel(plan)+' · '+noches+' noche(s) · '+fmtUSD(monto)+' (mismo precio que se paga al restaurante)', cargoTipo:'Comida', cargoUsd:monto, cargoBs:precioBs(monto), comidasPlan:plan, noches:noches, montoUsd:0, montoBs:0, metodo:''});
+  logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', cargoId:'cp-plan', control:null, detalle:(esSolo?'Plan de comidas quitado (solo alojamiento)':('Plan de comidas · '+planLabel(plan)+' · '+nn+' noche(s) · '+fmtUSD(monto)+' (mismo precio que se paga al restaurante)')), cargoTipo:'Comida', cargoUsd:monto, cargoBs:precioBs(monto), comidasPlan:plan, noches:nn, montoUsd:0, montoBs:0, metodo:''});
 }
+
 /* [COMIDAS] Vuelve a calcular y sumar el plan de comidas en una habitacion ocupada (sirve para cuartos hechos antes o cuando cambia el numero de noches o los precios) */
 function habResumarComida(num){
   var r=findRoom(num); if(!r) return;
   if(r.estado!=='ocupada'){ alert('Esa habitación no está ocupada.'); return; }
+  if(r.autorizada){ alert('Esta habitación está autorizada por '+autorizaTexto()+'.\n\nNo se le cambia el plan de comidas. Solo se puede extender la estadía.'); return; }
   var plan=r.plan||'solo';
   if(plan==='solo'){ alert('Esta habitación no tiene plan de comidas. Se elige al hacer el check-in.'); return; }
   var noches=Number(r.noches||1);
@@ -10133,10 +10087,67 @@ function habResumarComida(num){
   render();
   alert('Listo. El plan de comidas quedó sumado: '+fmtUSD(nuevo)+'.');
 }
+/* [COMIDAS-NOCHES-NUEVAS] Cuando se extiende la estadía: las noches que ya estaban
+   pagadas o sumadas se quedan como están y SOLO se agregan las noches nuevas.
+   Si el plan era "solo alojamiento", se le pregunta (sin nombres fijos) si esas
+   noches nuevas llevan comidas. */
+function extenderComidasNoches(num, add){
+  var r=findRoom(num); if(!r) return;
+  add=parseInt(add)||0; if(add<=0) return;
+  var plan=r.plan||'solo';
+  if(plan!=='solo' && planCostoNoche(plan)>0){
+    var _ts=Date.now(); var cargos=cargosDe(r).slice();
+    planMeals(plan).forEach(function(m,ix){
+      var pu=Number(comidasPrecios()[m])||0; if(pu<=0) return;
+      cargos.push({id:'cp'+(_ts+ix), tipo:'Comida', desc:mealIcon(m)+' '+mealLabel(m)+' · '+add+' noche(s) nuevas', montoUsd:Math.round(pu*add*100)/100, restaurante:'', origen:'comidaPlan', comida:m, nochesCubiertas:add, fecha:new Date().toISOString(), pagado:false, control:null, hab:Number(num)});
+    });
+    var tot=cargos.filter(function(c){ return c.origen==='comidaPlan'; }).reduce(function(s,c){ return s+Number(c.montoUsd||0); },0);
+    updateRoom(num,{cargos:cargos, comidaincTotal:Math.round(tot*100)/100});
+    logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Comidas de las '+add+' noche(s) nuevas · '+planLabel(plan)+' · '+fmtUSD(planCostoNoche(plan)*add), cargoTipo:'Comida', cargoUsd:planCostoNoche(plan)*add, montoUsd:0, montoBs:0, metodo:''});
+  }
+}
+function extenderPreguntarComidas(num, add){
+  var r=findRoom(num); if(!r) return;
+  var plan=r.plan||'solo';
+  var h='<button class="close" onclick="cerrarModal()">×</button>';
+  h+='<h2>🍳 Las '+add+' noche(s) nuevas</h2>';
+  h+='<div class="rstate" style="color:#55637a">Lo que ya estaba en la cuenta no se toca. Solo se le suman las noches nuevas.</div>';
+  if(plan!=='solo'){
+    var cp=planCostoNoche(plan);
+    h+='<div style="background:#f3f6fb;border-radius:10px;padding:12px 14px;font-size:13.5px;color:#44526a">Esta habitación tiene <b>'+esc(planLabel(plan))+'</b>. Las '+add+' noche(s) nuevas llevan el mismo plan.'+(cp>0?('<div style="margin-top:6px">Se suma a la cuenta: <b>'+fmtUSD(cp*add)+'</b> ('+fmtUSD(cp)+' por noche × '+add+')</div>'):'<div style="margin-top:6px;color:#a23b3b">Todavía no tiene precio configurado, así que no se suma nada.</div>')+'</div>';
+    h+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="extenderComidasNoches('+num+','+add+');cerrarModal();render();alert(\'Listo. Estadía extendida.\')">Sí, con el mismo plan</button>';
+    h+='<button class="btn-ghost" onclick="cerrarModal();render();alert(\'Listo. Estadía extendida sin sumar comidas.\')">No sumar comidas</button></div>';
+  } else {
+    h+='<div style="font-size:13px;color:#55637a;margin-bottom:8px">¿Las '+add+' noche(s) nuevas llevan comidas incluidas? Si sí, elige el plan.</div>';
+    h+='<label class="lbl">Plan para las noches nuevas</label><select id="hxc-plan" class="inp" onchange="rebuildMealRests(\'hxc\')">'+planOptions('solo')+'</select>';
+    h+='<div id="hxc-meals-box"></div>';
+    h+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="extenderGuardarComidasNuevas('+num+','+add+')">Guardar</button><button class="btn-ghost" onclick="cerrarModal();render();alert(\'Listo. Estadía extendida sin comidas.\')">Solo alojamiento</button></div>';
+  }
+  showModal(h);
+}
+function extenderGuardarComidasNuevas(num, add){
+  var r=findRoom(num); if(!r) return;
+  var plan=(document.getElementById('hxc-plan')||{}).value||'solo';
+  var rests=restsConDefault(plan, collectMealRests('hxc'));
+  if(plan==='solo'){ cerrarModal(); render(); alert('Listo. Estadía extendida.'); return; }
+  if(planCostoNoche(plan)<=0){ alert('Ese plan todavía no tiene precio. Ponle el precio en la pantalla de comidas y después usa "Sumar el plan de comidas" en la habitación.'); return; }
+  var _ts=Date.now(); var cargos=cargosDe(r).slice();
+  planMeals(plan).forEach(function(m,ix){
+    var pu=Number(comidasPrecios()[m])||0; if(pu<=0) return;
+    cargos.push({id:'cp'+(_ts+ix), tipo:'Comida', desc:mealIcon(m)+' '+mealLabel(m)+' · '+add+' noche(s) nuevas', montoUsd:Math.round(pu*add*100)/100, restaurante:'', origen:'comidaPlan', comida:m, nochesCubiertas:add, fecha:new Date().toISOString(), pagado:false, control:null, hab:Number(num)});
+  });
+  var tot=cargos.filter(function(c){ return c.origen==='comidaPlan'; }).reduce(function(s,c){ return s+Number(c.montoUsd||0); },0);
+  updateRoom(num,{plan:plan, planRest:rests, cargos:cargos, comidaincTotal:Math.round(tot*100)/100});
+  logKardex('cargo',{hab:num, huesped:r.huesped||'', clienteId:r.clienteId||'', detalle:'Comidas de las '+add+' noche(s) nuevas · '+planLabel(plan)+' · '+fmtUSD(planCostoNoche(plan)*add), cargoTipo:'Comida', cargoUsd:planCostoNoche(plan)*add, montoUsd:0, montoBs:0, metodo:''});
+  cerrarModal(); render();
+  alert('Listo. Estadía extendida y comidas de las noches nuevas sumadas: '+fmtUSD(planCostoNoche(plan)*add)+'.');
+}
+
 /* [COMIDAS] Elegir o cambiar el plan de una habitacion ya ocupada */
 function habElegirPlanComida(num){
   var r=findRoom(num); if(!r) return;
   if(r.estado!=='ocupada'){ alert('Esa habitación no está ocupada.'); return; }
+  if(r.autorizada){ alert('Esta habitación está autorizada por '+autorizaTexto()+'.\n\nNo se le cambia el plan de comidas. Solo se puede extender la estadía.'); return; }
   var plan=r.plan||'solo'; var rests=r.planRest||{};
   var h='<button class="close" onclick="abrirHab('+num+')">×</button>';
   h+='<h2>🍳 Plan de comidas · Hab. '+num+'</h2>';
@@ -10149,6 +10160,7 @@ function habElegirPlanComida(num){
 }
 function habGuardarPlanComida(num){
   var r=findRoom(num); if(!r) return;
+  if(r.autorizada){ alert('Esta habitación está autorizada por '+autorizaTexto()+'.\n\nNo se le cambia el plan de comidas. Solo se puede extender la estadía.'); return; }
   var plan=(document.getElementById('hpc-plan')||{}).value||'solo';
   var rests=restsConDefault(plan, collectMealRests('hpc'));
   updateRoom(num,{plan:plan, planRest:rests});
@@ -10797,7 +10809,8 @@ function corteTurnoBloques(B){
   if(B.checkouts.length){ h+='<h2>Salidas del hotel (check-out)</h2><table><tr><th>Hora</th><th>N° Control</th><th>Habitación</th><th>Huésped</th><th>Detalle</th><th class="r">Bs</th><th class="r">USD</th></tr>'; B.checkouts.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+corteCtrl(k)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td class="r">'+(Number(k.montoBs||0)>0?fmtBs(k.montoBs):'—')+'</td><td class="r">'+(Number(k.montoUsd||0)>0?fmtUSD(k.montoUsd):'—')+'</td></tr>'; }); h+='</table>'; }
   if(B.cargos.length){ h+='<h2>Consumos anotados a habitaciones</h2><table><tr><th>Hora</th><th>N° Control</th><th>Habitación</th><th>Huésped</th><th>Detalle del consumo</th><th>Registrado por</th><th class="r">USD</th></tr>'; let tc=0; B.cargos.forEach(k=>{ tc+=Number(k.cargoUsd||0); h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+corteCtrl(k)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td>'+esc(k.usuario||'—')+'</td><td class="r">'+fmtUSD(k.cargoUsd||0)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="6">TOTAL CONSUMOS ANOTADOS</td><td class="r">'+fmtUSD(tc)+'</td></tr></table>'; }
   if(B.comidas.length){ h+='<h2>Comidas incluidas (turno)</h2><table><tr><th>Hora</th><th>N° Control</th><th>Habitación</th><th>Restaurante</th><th>Comida</th><th class="r">USD</th></tr>'; let tm=0; B.comidas.forEach(k=>{ tm+=Number(k.montoUsd||0); h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+corteCtrl(k)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.restaurante||'—')+'</td><td>'+esc(k.comida?mealLabel(k.comida):planLabel(k.plan))+'</td><td class="r">'+fmtUSD(k.montoUsd||0)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="5">TOTAL COMIDAS</td><td class="r">'+fmtUSD(tm)+'</td></tr></table>'; }
-  if(B.anuls.length){ h+='<h2>Cobros anulados en el turno</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Motivo</th><th>Anulado por</th><th class="r">Bs</th></tr>'; B.anuls.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.motivo||k.detalle||'')+'</td><td>'+esc(k.anuladoPor||k.usuario||'—')+'</td><td class="r">'+fmtBs(k.montoBs||0)+'</td></tr>'; }); h+='</table>'; }
+  /* [CORTE-ANULADOS] Los anulados van SIEMPRE en un renglón aparte, para que el cierre cuadre: */
+  if(B.anuls.length){ h+='<h2>⚠️ Cobros anulados en el turno (se descuentan aparte, NO cuentan como cobrado)</h2><table><tr><th>Hora</th><th>N° Control</th><th>Habitación</th><th>Huésped</th><th>Motivo</th><th>Anulado por</th><th class="r">Bs</th><th class="r">USD</th></tr>'; var _ab2=0,_au2=0; B.anuls.forEach(k=>{ _ab2+=Number(k.montoBs||0); _au2+=Number(k.montoUsd||0); h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+corteCtrl(k)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.motivo||k.detalle||'')+'</td><td>'+esc(k.anuladoPor||k.usuario||'—')+'</td><td class="r">-'+fmtBs(k.montoBs||0)+'</td><td class="r">-'+fmtUSD(k.montoUsd||0)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="6">TOTAL ANULADO EN EL TURNO</td><td class="r">-'+fmtBs(_ab2)+'</td><td class="r">-'+fmtUSD(_au2)+'</td></tr></table>'; }
   if(B.creds.length){ h+='<h2>Ventas a crédito (CXC) del turno</h2><table><tr><th>Hora</th><th>Habitación</th><th>Cliente</th><th>Detalle</th><th class="r">Bs</th><th class="r">USD</th></tr>'; let cb=0,cu=0; B.creds.forEach(k=>{ cb+=Number(k.credBs||0); cu+=Number(k.credUsd||0); h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td><td class="r">'+fmtBs(k.credBs||0)+'</td><td class="r">'+fmtUSD(k.credUsd||0)+'</td></tr>'; }); h+='<tr class="tot"><td colspan="4">TOTAL A CRÉDITO</td><td class="r">'+fmtBs(cb)+'</td><td class="r">'+fmtUSD(cu)+'</td></tr></table>'; }
   if(B.auts.length){ h+='<h2>👑 Autorizadas por '+esc(autorizaTitulo())+'</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Invitado</th><th>Motivo</th><th>Cómo se cobra</th><th class="r">Normal</th><th class="r">Se cobra</th></tr>'; B.auts.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?('Hab. '+esc(String(k.hab))):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.autInvitado||'—')+'</td><td>'+esc(k.autMotivo||'—')+'</td><td>'+esc(k.autModo?autorizaModoTxt(k.autModo):(k.metodo||'—'))+'</td><td class="r">'+fmtUSD(k.autTarifaNormal||0)+'</td><td class="r">'+fmtUSD(k.autTarifaCobra||0)+'</td></tr>'; }); h+='</table>'; }
   if(B.cambios.length){ h+='<h2>Cambios de habitación</h2><table><tr><th>Hora</th><th>Habitación</th><th>Huésped</th><th>Detalle</th></tr>'; B.cambios.forEach(k=>{ h+='<tr><td>'+horaCorta(k.ts)+'</td><td>'+(k.hab?esc(String(k.hab)):'—')+'</td><td>'+esc(k.huesped||'—')+'</td><td>'+esc(k.detalle||'')+'</td></tr>'; }); h+='</table>'; }
@@ -12409,6 +12422,91 @@ function cxcUnirHacer(gi, btn){
   if(!res){ alert('No se pudo unir. Revisa las cuentas.'); return; }
   cerrarModal(); render();
   alert('Cuentas unidas.\n\nQuedo una sola cuenta a nombre de '+res.dest.nombre+' con el Control N° '+fmtControl(res.dest.control)+'.\nSe juntaron '+fmtUSD(res.tot)+'.\n\nLas cuentas viejas quedan marcadas como unidas (no se borro nada).');
+}
+
+
+/* ====== [AUTORIZADA] LA HABITACIÓN AUTORIZADA NO LLEVA CONSUMOS NI CAMBIOS DE PLAN ======
+   Regla del hotel: en una habitación autorizada (cortesía, mitad de precio o a crédito)
+   solo se maneja el hospedaje. No se le cargan consumos, no se le cambia el plan de
+   comidas y no se le toca la tarifa. Lo único que se puede hacer es EXTENDER la estadía. */
+function bloqueoAutorizadaHTML(r, que){
+  if(!r || !r.autorizada) return '';
+  var txt='<b>👑 Habitación autorizada por '+esc(autorizaTexto())+'.</b> Aquí solo se maneja el hospedaje.';
+  if(que==='cargo') txt+=' No se le cargan consumos (comida, lavandería, minibar ni otros).';
+  else if(que==='plan') txt+=' No se le cambia el plan de comidas.';
+  else if(que==='tarifa') txt+=' No se le cambia la tarifa: la fija la autorización del check-in.';
+  txt+='<div style="margin-top:4px;color:#55637a">Si el huésped necesita más noches, usa <b>Extender estadía</b>.</div>';
+  return '<div style="background:#f3eefb;border:1px solid #dccdf1;border-radius:10px;padding:9px 12px;margin:0 0 8px;font-size:12.5px;color:#5b3a86">'+txt+'</div>';
+}
+/* Cuenta mostrada sin la palabra "no ha pagado": en autorizadas se dice clarito */
+function cuentaHabBoxAutorizada(r){
+  var h='<div style="background:#f7f3fd;border:1px solid #e8dcf8;border-radius:10px;padding:11px 13px;margin-top:8px">';
+  h+='<div style="font-weight:800;color:#5b3a86;font-size:13.5px;margin-bottom:6px">👑 Cuenta de la habitación (autorizada)</div>';
+  h+='<div style="font-size:12.8px;color:#44526a">'+esc(autorizaModoTxt(r.autorizadaModo))+'</div>';
+  if(r.autorizadaModo==='gratis') h+='<div style="font-size:12.8px;color:#1d6b38;margin-top:3px">✓ El hospedaje está cubierto por la autorización: no se le cobra nada.</div>';
+  else if(r.autorizadaModo==='mitad') h+='<div style="font-size:12.8px;color:#8a5200;margin-top:3px">La mitad que le toca al invitado está en <b>CXC</b>'+(r.autorizadaCxcControl?(' (Control N° '+fmtControl(r.autorizadaCxcControl)+')'):'')+'.</div>';
+  else h+='<div style="font-size:12.8px;color:#8a5200;margin-top:3px">El hospedaje va a <b>CXC</b>'+(r.creditoCxcControl?(' (Control N° '+fmtControl(r.creditoCxcControl)+')'):'')+'.</div>';
+  if(r.autorizadaInvitado) h+='<div style="font-size:12.5px;color:#55637a;margin-top:3px">Invitado: '+esc(r.autorizadaInvitado)+'</div>';
+  h+='</div>';
+  return h;
+}
+function editarPagoModal(id){
+  if(!(session().rol==='admin'||puedeSup('anularPagos'))){ alert('No tienes permiso para corregir cobros.'); return; }
+  var p=(DB.get('pagos',[])||[]).find(function(x){ return x.id===id; });
+  if(!p){ alert('No se encontr\u00f3 el cobro.'); return; }
+  var met=String(p.metodo||'');
+  var ref=''; var mm=met.match(/\[Ref:\s*([^\]]*)\]/); if(mm) ref=mm[1];
+  var base=met.replace(/\s*\[Ref:[^\]]*\]/g,'').trim();
+  var lista=(typeof getMetodos==='function'?getMetodos():[])||[];
+  var opts=''; var _hit=false;
+  lista.forEach(function(m){ var sel=(String(m)===base); if(sel) _hit=true; opts+='<option value="'+escA(m)+'"'+(sel?' selected':'')+'>'+esc(m)+'</option>'; });
+  if(!_hit && base) opts='<option value="'+escA(base)+'" selected>'+esc(base)+' (actual)</option>'+opts;
+  var h='<button class="close" onclick="cerrarModal()">\u00d7</button><h2>\u270f\ufe0f Corregir forma de pago</h2>';
+  h+='<div style="background:#eef3fb;border:1px solid #c9d8ee;border-radius:10px;padding:10px 12px;font-size:12.5px;color:#2a4a73;margin-bottom:10px">Se corrige <b>c\u00f3mo pag\u00f3</b> el hu\u00e9sped (efectivo, pago m\u00f3vil, punto, Zelle\u2026) y la referencia. El monto y el N\u00b0 de control <b>no cambian</b>. Queda anotado en el Kardex qui\u00e9n lo corrigi\u00f3 y por qu\u00e9.</div>';
+  h+='<div style="background:#f3f6fb;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px">';
+  h+='<div><b>'+(p.hab?('Hab. '+esc(String(p.hab))):(p.clienteId?'Cobro a cliente':'Cobro suelto'))+'</b> '+esc(p.huesped||p.concepto||'')+'</div>';
+  h+='<div style="color:#55637a;margin-top:3px">'+(p.control?('Control N\u00b0 '+fmtControl(p.control)+' \u00b7 '):'')+esc(p.fechaStr||'')+'</div>';
+  h+='<div style="font-weight:800;color:var(--azul);margin-top:3px">'+fmtBs(p.montoBs)+' \u00b7 '+fmtUSD(p.montoUsd)+'</div></div>';
+  h+='<div class="field"><label>Forma de pago</label><select id="ep-metodo">'+opts+'</select></div>';
+  h+='<div class="field"><label>Referencia / N\u00b0 de operaci\u00f3n <span style="color:#8893a5;font-weight:400;font-size:12px">(opcional)</span></label><input id="ep-ref" value="'+escA(ref)+'" placeholder="ej: 123456789"></div>';
+  h+='<div class="field"><label>\u00bfPor qu\u00e9 lo corriges? (obligatorio)</label><textarea id="ep-motivo" rows="2" placeholder="ej: pag\u00f3 por pago m\u00f3vil y se carg\u00f3 como efectivo"></textarea></div>';
+  h+='<div class="divider"></div><div class="actions"><button class="btn-green" onclick="confirmarEditarPago('+id+', this)">Guardar correcci\u00f3n</button><button class="btn-ghost" onclick="cerrarModal()">Cancelar</button></div>';
+  showModal(h);
+}
+function confirmarEditarPago(id, btn){
+  if(procesoDoble(btn)) return;
+  if(!(session().rol==='admin'||puedeSup('anularPagos'))){ procesoListo(btn); alert('No tienes permiso para corregir cobros.'); return; }
+  var motivo=((document.getElementById('ep-motivo')||{}).value||'').trim();
+  if(!motivo){ procesoListo(btn); alert('Escribe el motivo de la correcci\u00f3n.'); return; }
+  var met=((document.getElementById('ep-metodo')||{}).value||'').trim();
+  if(!met){ procesoListo(btn); alert('Elige la forma de pago.'); return; }
+  var ref=((document.getElementById('ep-ref')||{}).value||'').trim();
+  var pagos=DB.get('pagos',[])||[]; var p=pagos.find(function(x){ return x.id===id; });
+  if(!p){ procesoListo(btn); alert('No se encontr\u00f3 el cobro.'); return; }
+  var antes=String(p.metodo||'');
+  var nuevo=met+(ref?(' [Ref: '+ref+']'):'');
+  if(antes===nuevo){ procesoListo(btn); alert('No cambiaste nada.'); return; }
+
+  /* 1) se corrige la l\u00ednea de forma de pago, sin mover el monto total */
+  if(Array.isArray(p.metodos) && p.metodos.length===1){
+    p.metodos[0].metodo=met; p.metodos[0].ref=ref;
+  } else if(Array.isArray(p.metodos) && p.metodos.length>1){
+    var _mt=p.metodos.map(function(x){ return String(x.metodo||'').replace(/\s*\(.*\)\s*$/,''); });
+    var _ix=_mt.indexOf(met);
+    if(_ix>=0){ p.metodos[_ix].ref=ref; }
+    else { p.metodos[0].metodo=met; p.metodos[0].ref=ref; }
+  } else {
+    p.metodos=[{metodo:met, montoUsd:Number(p.montoUsd||0), montoBs:Number(p.montoBs||0), ref:ref}];
+  }
+  /* 2) se rehace el texto de la forma de pago con los montos reales */
+  if(Array.isArray(p.metodos) && p.metodos.length){
+    p.metodo=p.metodos.map(function(l){ var t2=String(l.metodo||''); if(p.metodos.length>1) t2+=' ('+fmtUSD(Number(l.montoUsd||0))+')'; if(l.ref) t2+=' [Ref: '+l.ref+']'; return t2; }).join(' + ');
+  } else { p.metodo=nuevo; }
+  p.editadoPor=(session()||{}).nombre||''; p.editadoTs=Date.now();
+  DB.save('pagos', pagos);
+  logKardex('correccion', {hab:p.hab||0, huesped:p.huesped||p.concepto||'', clienteId:p.clienteId||'', control:p.control||'', detalle:'Correcci\u00f3n de forma de pago: "'+antes+'" \u2192 "'+p.metodo+'" \u00b7 Motivo: '+motivo, montoUsd:0, montoBs:0, metodo:p.metodo});
+  cerrarModal(); render();
+  alert('Corregido. La forma de pago qued\u00f3 en "'+p.metodo+'" y el N\u00b0 de control N\u00b0 '+fmtControl(p.control)+' no se movi\u00f3.\n\nQued\u00f3 anotado en el Kardex qui\u00e9n lo corrigi\u00f3 y por qu\u00e9.');
 }
 
 bootstrap();
